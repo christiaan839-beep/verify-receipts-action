@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/conformance/verify-v2.mjs at commit
-// 03b38ee2d28080a2a4aa0810dbb1dfcd447379fd. Licence:
+// 808fa4c923fbb4e0b8fd064487657cc2ecd0148e. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: converted to TypeScript with explicit types,
@@ -43,7 +43,12 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
-/** Deep JSON-value equality; object key order does not matter. */
+/**
+ * Deep JSON-value equality; object key order does not matter. A number of
+ * magnitude 2^53 or more equals nothing: JSON.parse reads 2^53 + 1 as
+ * 2^53, so such a number in a repeated field is rejected in every
+ * verifier rather than compared differently.
+ */
 export function jsonEqual(a: unknown, b: unknown): boolean {
   if (Array.isArray(a) || Array.isArray(b)) {
     return (
@@ -59,7 +64,10 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
     if (ka.length !== Object.keys(b).length) return false;
     return ka.every((k) => Object.hasOwn(b, k) && jsonEqual(a[k], b[k]));
   }
-  return a === b; // null, booleans, numbers, strings
+  if (typeof a === "number" && typeof b === "number") {
+    return Math.abs(a) < 2 ** 53 && Math.abs(b) < 2 ** 53 && a === b;
+  }
+  return a === b; // null, booleans, strings
 }
 
 export function verifyV2Receipt(receipt: unknown, publicKey: KeyObject): VerifyResult {

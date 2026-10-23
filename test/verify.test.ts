@@ -84,6 +84,17 @@ describe("tampered receipts", () => {
     assert.match(r.reason ?? "", /envelope field "overall" disagrees/);
   });
 
+  it("rejects a repeated number of magnitude 2^53 or more, even one that matches", () => {
+    // JSON.parse reads 2^53 + 1 as 2^53; the Python and Go verifiers would
+    // not, so every verifier rejects such a number instead of comparing it.
+    assert.equal(one(signReceipt(sampleBody({ n: 2 ** 53 - 1 }), issuer.privateKey)).ok, true);
+    for (const n of [2 ** 53, -(2 ** 53), 1e300]) {
+      const r = one(signReceipt(sampleBody({ n }), issuer.privateKey));
+      assert.equal(r.ok, false, String(n));
+      assert.match(r.reason ?? "", /envelope field "n" disagrees/);
+    }
+  });
+
   it("rejects an envelope field the signer never signed", () => {
     const r = one({ ...signReceipt(sampleBody(), issuer.privateKey), approvedBy: "someone" });
     assert.equal(r.ok, false);
