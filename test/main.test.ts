@@ -162,7 +162,7 @@ describe("run", () => {
     assert.equal(r.outputs.verified, "2");
     assert.equal(r.exitCode, 1);
     assert.match(r.stdout, /file=corpus\/v2-invalid-wrong-key\.json::/);
-    assert.ok(conformanceKey().fingerprint.length > 0);
+    assert.ok(r.summary.includes(`key ${conformanceKey().fingerprint}`), r.summary);
   });
 
   it("warns instead of failing when fail-on-invalid is false", async () => {
@@ -246,6 +246,26 @@ describe("run", () => {
     const r = await act({ receipts: "big.json", "public-keys": issuer.pem });
     assert.equal(r.exitCode, 1);
     assert.match(r.outputs.failures ?? "", /larger than/);
+  });
+
+  it("reports an oversized proof file with its own reason and annotation title", async () => {
+    const issuer = makeKey();
+    const logKey = makeKey();
+    const a = signReceipt(sampleBody({ receiptId: "a" }), issuer.privateKey);
+    const log = buildLog([a], logKey.privateKey);
+    write("receipts/a.json", a);
+    write("sth.json", log.treeHead);
+    write("proofs/big.json", " ".repeat(5 * 1024 * 1024 + 1));
+    const r = await act({
+      receipts: "receipts/*.json",
+      "public-keys": issuer.pem,
+      "tree-head": "sth.json",
+      "log-public-keys": logKey.pem,
+      "inclusion-proofs": "proofs/*.json",
+    });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.failed, "2");
+    assert.match(r.stdout, /::error title=Tree head or inclusion proof file unusable,file=proofs\/big\.json::file is larger than/);
   });
 
   const configErrors: [string, Record<string, string>, RegExp][] = [

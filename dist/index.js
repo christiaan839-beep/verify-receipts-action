@@ -22136,8 +22136,8 @@ var DefaultGlobber = class _DefaultGlobber {
         patterns = patterns.replace(/\r\n/g, "\n");
         patterns = patterns.replace(/\r/g, "\n");
       }
-      const lines2 = patterns.split("\n").map((x) => x.trim());
-      for (const line of lines2) {
+      const lines = patterns.split("\n").map((x) => x.trim());
+      for (const line of lines) {
         if (!line || line.startsWith("#")) {
           continue;
         } else {
@@ -22229,7 +22229,9 @@ function parsePublicKeys(text, source) {
     blocks++;
     const label = match3[1] ?? "";
     if (label.includes("PRIVATE")) {
-      throw new KeyError(`${source}: block ${blocks} is a private key; supply public keys only`);
+      throw new KeyError(
+        `${source}: block ${blocks} is a private key; pin the matching public key instead (openssl pkey -pubout derives it)`
+      );
     }
     if (label !== "PUBLIC KEY") {
       throw new KeyError(`${source}: block ${blocks} is "${label}", expected "PUBLIC KEY"`);
@@ -22248,7 +22250,9 @@ function parsePublicKeys(text, source) {
     keys.push({ key, fingerprint: fingerprint(key) });
   }
   if (blocks === 0 && text.trim() !== "") {
-    throw new KeyError(`${source}: no PEM "PUBLIC KEY" block found`);
+    throw new KeyError(
+      `${source}: no PEM "PUBLIC KEY" block found; include the -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- lines`
+    );
   }
   return keys;
 }
@@ -22491,7 +22495,7 @@ function checkTimes(signed, now, maxAgeDays) {
 function isCount2(v, min) {
   return typeof v === "number" && Number.isSafeInteger(v) && v >= min;
 }
-function parseProofEntry(v) {
+function parseProofEntry(v, file) {
   if (!isObject2(v)) return "an inclusion proof must be an object";
   const { leafHashHex, leafIndex, treeSize, auditPath } = v;
   if (typeof leafHashHex !== "string" || !HEX64.test(leafHashHex)) {
@@ -22502,7 +22506,7 @@ function parseProofEntry(v) {
   if (!Array.isArray(auditPath) || !auditPath.every((h) => typeof h === "string" && HEX64.test(h))) {
     return "auditPath must be an array of 64-character lowercase hex hashes";
   }
-  return { file: "", leafIndex, treeSize, auditPath };
+  return { file, leafHashHex, leafIndex, treeSize, auditPath };
 }
 function readProofs(files, errors) {
   const byLeaf = /* @__PURE__ */ new Map();
@@ -22514,17 +22518,15 @@ function readProofs(files, errors) {
     }
     const entries = Array.isArray(parsed.value) ? parsed.value : [parsed.value];
     entries.forEach((entry, i) => {
-      const proof = parseProofEntry(entry);
+      const proof = parseProofEntry(entry, f.file);
       if (typeof proof === "string") {
         const where = Array.isArray(parsed.value) ? ` (entry ${i})` : "";
         errors.push({ file: f.file, reason: `${proof}${where}` });
         return;
       }
-      const leaf = entry.leafHashHex;
-      proof.file = f.file;
-      const list = byLeaf.get(leaf) ?? [];
+      const list = byLeaf.get(proof.leafHashHex) ?? [];
       list.push(proof);
-      byLeaf.set(leaf, list);
+      byLeaf.set(proof.leafHashHex, list);
     });
   }
   return byLeaf;
@@ -22644,6 +22646,7 @@ function verifyReceipts(files, options) {
 // src/main.ts
 var MAX_FILE_BYTES = 5 * 1024 * 1024;
 var SUMMARY_ROWS = 300;
+var ISSUES_URL = "https://github.com/christiaan839-beep/verify-receipts-action/issues";
 var InputError = class extends Error {
 };
 function workspace() {
@@ -22658,14 +22661,14 @@ function workspaceRoots() {
     return [ws];
   }
 }
-function display(absPath) {
+function displayPath(absPath) {
   for (const root of workspaceRoots()) {
     const rel = relative(root, absPath);
     if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return rel.split(sep5).join("/");
   }
   return absPath.split(sep5).join("/");
 }
-function lines(name) {
+function lineInput(name) {
   return getInput(name).split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !l.startsWith("#"));
 }
 function boolInput(name, fallback) {
@@ -22673,9 +22676,9 @@ function boolInput(name, fallback) {
   if (raw === "") return fallback;
   if (raw === "true") return true;
   if (raw === "false") return false;
-  throw new InputError(`input ${name} must be "true" or "false"`);
+  throw new InputError(`input ${name} must be "true" or "false", not "${raw}"`);
 }
-async function expand2(patterns) {
+async function globFiles(patterns) {
   if (patterns.length === 0) return [];
   const globber = await create(patterns.join("\n"), {
     followSymbolicLinks: false,
@@ -22688,22 +22691,25 @@ async function readLimited(path6) {
   try {
     const info2 = await stat2(path6);
     if (!info2.isFile()) return { ok: false, reason: "not a regular file" };
-    if (info2.size > MAX_FILE_BYTES) return { ok: false, reason: `file is larger than ${MAX_FILE_BYTES} bytes` };
+    if (info2.size > MAX_FILE_BYTES) {
+      return { ok: false, reason: `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads` };
+    }
     return { ok: true, content: await readFile(path6, "utf8") };
-  } catch {
-    return { ok: false, reason: "file could not be read" };
+  } catch (err) {
+    const code = err instanceof Error && "code" in err ? String(err.code) : String(err);
+    return { ok: false, reason: `file could not be read (${code})` };
   }
 }
-async function readRequired(path6, input) {
+async function readInputFile(path6, input) {
   const abs = resolve(workspace(), path6);
   const r = await readLimited(abs);
-  if (!r.ok) throw new InputError(`${input}: ${display(abs)}: ${r.reason}`);
+  if (!r.ok) throw new InputError(`${input}: ${displayPath(abs)}: ${r.reason}`);
   return r.content;
 }
-async function keysFrom(textInput, fileInput) {
+async function readPinnedKeys(textInput, fileInput) {
   const keys = parsePublicKeys(getInput(textInput), `input ${textInput}`);
-  for (const path6 of lines(fileInput)) {
-    keys.push(...parsePublicKeys(await readRequired(path6, fileInput), `${fileInput} ${path6}`));
+  for (const path6 of lineInput(fileInput)) {
+    keys.push(...parsePublicKeys(await readInputFile(path6, fileInput), `${fileInput} ${path6}`));
   }
   return dedupeKeys(keys);
 }
@@ -22713,7 +22719,7 @@ function escapeHtml(s) {
 function entryLabel(index) {
   return index === null ? "" : `entry ${index}`;
 }
-function table(header, rows) {
+function htmlTable(header, rows) {
   const head = `<tr>${header.map((h) => `<th>${h}</th>`).join("")}</tr>`;
   const body = rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("\n");
   return `<table>
@@ -22744,7 +22750,7 @@ async function writeSummary(report, failures) {
     r.ok ? "verified" : "<strong>failed</strong>",
     r.ok ? escapeHtml(`key ${r.key ?? ""}${r.leafIndex === void 0 ? "" : `, leaf ${r.leafIndex}`}`) : escapeHtml(r.reason ?? "")
   ]);
-  parts.push(table(["File", "Entry", "Result", "Detail"], rows));
+  parts.push(htmlTable(["File", "Entry", "Result", "Detail"], rows));
   if (report.results.length > SUMMARY_ROWS) {
     parts.push(`<p>${report.results.length - SUMMARY_ROWS} more receipts are listed in the step outputs.</p>
 `);
@@ -22752,7 +22758,7 @@ async function writeSummary(report, failures) {
   if (report.fileErrors.length > 0) {
     parts.push("<h3>Tree head and proof files</h3>\n");
     parts.push(
-      table(
+      htmlTable(
         ["File", "Problem"],
         report.fileErrors.slice(0, SUMMARY_ROWS).map((e) => [`<code>${escapeHtml(e.file)}</code>`, escapeHtml(e.reason)])
       )
@@ -22763,8 +22769,12 @@ async function writeSummary(report, failures) {
 async function run(options = {}) {
   try {
     const now = options.now ?? /* @__PURE__ */ new Date();
-    const receiptPatterns = lines("receipts");
-    if (receiptPatterns.length === 0) throw new InputError("input receipts is required");
+    const receiptPatterns = lineInput("receipts");
+    if (receiptPatterns.length === 0) {
+      throw new InputError(
+        "input receipts is required: give one or more glob patterns for the receipt files, one per line"
+      );
+    }
     const failOnInvalid = boolInput("fail-on-invalid", true);
     const failOnEmpty = boolInput("fail-on-empty", true);
     const maxAgeRaw = getInput("max-age-days").trim();
@@ -22772,44 +22782,55 @@ async function run(options = {}) {
     if (maxAgeRaw !== "") {
       maxAgeDays = Number(maxAgeRaw);
       if (!Number.isSafeInteger(maxAgeDays) || maxAgeDays <= 0) {
-        throw new InputError("input max-age-days must be a positive whole number");
+        throw new InputError(`input max-age-days must be a positive whole number of days, not "${maxAgeRaw}"`);
       }
     }
-    const keys = await keysFrom("public-keys", "public-keys-file");
-    if (keys.length === 0) throw new InputError("supply at least one Ed25519 key in public-keys or public-keys-file");
+    const keys = await readPinnedKeys("public-keys", "public-keys-file");
+    if (keys.length === 0) {
+      throw new InputError(
+        "no receipt key: give at least one Ed25519 key as a PEM PUBLIC KEY block in public-keys or public-keys-file"
+      );
+    }
     const treeHeadPath = getInput("tree-head").trim();
-    const logKeys = await keysFrom("log-public-keys", "log-public-keys-file");
-    const proofPatterns = lines("inclusion-proofs");
+    const logKeys = await readPinnedKeys("log-public-keys", "log-public-keys-file");
+    const proofPatterns = lineInput("inclusion-proofs");
     let log;
+    const unreadableProofs = [];
     if (treeHeadPath === "") {
       if (logKeys.length > 0 || proofPatterns.length > 0) {
-        throw new InputError("log-public-keys and inclusion-proofs need tree-head");
+        throw new InputError(
+          "log-public-keys, log-public-keys-file and inclusion-proofs need tree-head: set tree-head to the signed tree head file, or remove them"
+        );
       }
     } else {
       if (logKeys.length === 0) {
-        throw new InputError("tree-head needs at least one key in log-public-keys or log-public-keys-file");
+        throw new InputError(
+          "tree-head needs at least one key in log-public-keys or log-public-keys-file to verify its signature"
+        );
       }
       const treeHeadAbs = resolve(workspace(), treeHeadPath);
-      const treeHead = { file: display(treeHeadAbs), content: await readRequired(treeHeadPath, "tree-head") };
+      const treeHead = { file: displayPath(treeHeadAbs), content: await readInputFile(treeHeadPath, "tree-head") };
       const proofs = [];
-      for (const path6 of await expand2(proofPatterns)) {
+      for (const path6 of await globFiles(proofPatterns)) {
         const r = await readLimited(path6);
-        proofs.push({ file: display(path6), content: r.ok ? r.content : "" });
+        if (r.ok) proofs.push({ file: displayPath(path6), content: r.content });
+        else unreadableProofs.push({ file: displayPath(path6), reason: r.reason });
       }
       log = { treeHead, keys: logKeys, proofs };
     }
     const receiptFiles = [];
     const unreadable = [];
-    for (const path6 of await expand2(receiptPatterns)) {
+    for (const path6 of await globFiles(receiptPatterns)) {
       const r = await readLimited(path6);
-      if (r.ok) receiptFiles.push({ file: display(path6), content: r.content });
-      else unreadable.push({ file: display(path6), entry: null, reason: r.reason });
+      if (r.ok) receiptFiles.push({ file: displayPath(path6), content: r.content });
+      else unreadable.push({ file: displayPath(path6), reason: r.reason });
     }
     const verifyOptions = { keys, now, ...log && { log }, ...maxAgeDays !== void 0 && { maxAgeDays } };
     const report = verifyReceipts(receiptFiles, verifyOptions);
     for (const u of unreadable) {
       report.results.push({ file: u.file, index: null, ok: false, reason: u.reason });
     }
+    report.fileErrors.push(...unreadableProofs);
     const failures = [
       ...report.results.filter((r) => !r.ok).map((r) => ({ file: r.file, entry: r.index, reason: r.reason ?? "" })),
       ...report.fileErrors.map((e) => ({ file: e.file, entry: null, reason: e.reason }))
@@ -22819,27 +22840,34 @@ async function run(options = {}) {
     setOutput("verified", verified);
     setOutput("failed", failures.length);
     setOutput("failures", JSON.stringify(failures));
-    for (const f of failures) {
-      const prefix = f.entry === null ? "" : `entry ${f.entry}: `;
-      const annotate = failOnInvalid ? error : warning;
-      annotate(prefix + f.reason, { title: "Receipt verification failed", file: f.file });
+    const annotate = failOnInvalid ? error : warning;
+    for (const r of report.results) {
+      if (r.ok) continue;
+      const prefix = r.index === null ? "" : `entry ${r.index}: `;
+      annotate(prefix + (r.reason ?? ""), { title: "Receipt verification failed", file: r.file });
+    }
+    for (const e of report.fileErrors) {
+      annotate(e.reason, { title: "Tree head or inclusion proof file unusable", file: e.file });
     }
     await writeSummary(report, failures);
     if (report.results.length === 0) {
-      const msg = "no receipt files matched the receipts patterns";
+      const msg = "no receipt files matched the receipts patterns; check that the patterns are relative to the workspace and the files are checked out, or set fail-on-empty to false";
       if (failOnEmpty) setFailed(msg);
       else warning(msg);
       return;
     }
     info(`${verified} of ${report.results.length} receipts verified; ${failures.length} failures`);
     if (failures.length > 0 && failOnInvalid) {
-      setFailed(`${failures.length} receipt verification failure(s)`);
+      setFailed(
+        `${failures.length} verification failures, annotated on their files and listed in the failures output`
+      );
     }
   } catch (err) {
     if (err instanceof InputError || err instanceof KeyError) {
       setFailed(err.message);
     } else {
-      setFailed(`unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      setFailed(`internal error, a bug in the action; report it at ${ISSUES_URL}: ${message}`);
     }
   }
 }

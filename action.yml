@@ -23,38 +23,46 @@ inputs:
   public-keys-file:
     description: >-
       Paths, one per line, of files holding PEM "PUBLIC KEY" blocks. Combined
-      with public-keys. At least one key is required in total.
+      with public-keys. At least one key is required in total. Lines starting
+      with # are ignored.
     required: false
     default: ""
   tree-head:
     description: >-
       Path of a signed tree head (JSON) of the transparency log. When set, every
-      receipt must also have an inclusion proof that leads to this tree head's root.
+      receipt must also have an inclusion proof that leads to this tree head's
+      root, and at least one log key is required.
     required: false
     default: ""
   log-public-keys:
-    description: Pinned Ed25519 public keys (PEM) of the log that signed tree-head.
+    description: >-
+      Pinned Ed25519 public keys (PEM) of the log that signed tree-head.
+      Requires tree-head.
     required: false
     default: ""
   log-public-keys-file:
-    description: Paths, one per line, of files holding the log's PEM public keys.
+    description: >-
+      Paths, one per line, of files holding the log's PEM public keys. Combined
+      with log-public-keys. Requires tree-head.
     required: false
     default: ""
   inclusion-proofs:
     description: >-
       Glob patterns, one per line, for inclusion proof files. Each holds one proof
-      object or an array of them, matched to receipts by leaf hash.
+      object or an array of them, matched to receipts by leaf hash. Requires
+      tree-head.
     required: false
     default: ""
   max-age-days:
     description: >-
-      When set, a receipt's signed issuedAt must be no more than this many days old.
+      A positive whole number of days. When set, every receipt needs a signed
+      issuedAt no older than this and at most five minutes in the future.
     required: false
     default: ""
   fail-on-invalid:
     description: >-
-      "true" fails the step when any receipt fails; "false" reports failures as
-      warnings and lets the step pass.
+      "true" fails the step when any receipt, the tree head or a proof file
+      fails; "false" reports failures as warnings and lets the step pass.
     required: false
     default: "true"
   fail-on-empty:
