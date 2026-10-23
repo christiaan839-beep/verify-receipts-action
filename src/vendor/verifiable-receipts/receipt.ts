@@ -94,7 +94,7 @@ export function verifyV2Receipt(receipt: unknown, publicKey: KeyObject): VerifyR
     }
   }
 
-  let verified = false;
+  let verified: boolean;
   try {
     verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);
   } catch {
