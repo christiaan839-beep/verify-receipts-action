@@ -22283,6 +22283,9 @@ function jsonEqual(a, b) {
     if (ka.length !== Object.keys(b).length) return false;
     return ka.every((k) => Object.hasOwn(b, k) && jsonEqual(a[k], b[k]));
   }
+  if (typeof a === "number" && typeof b === "number") {
+    return Math.abs(a) < 2 ** 53 && Math.abs(b) < 2 ** 53 && a === b;
+  }
   return a === b;
 }
 function verifyV2Receipt(receipt, publicKey) {
