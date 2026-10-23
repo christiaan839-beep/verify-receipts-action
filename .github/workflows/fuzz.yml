@@ -1,0 +1,31 @@
+# Long property runs: every night (and on demand) the fast-check
+# properties in test/properties.test.ts run with 50,000 cases each. The
+# CI workflow runs them with 200 cases on every push.
+name: fuzz
+on:
+  schedule:
+    - cron: "53 2 * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  properties:
+    name: Long property runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: fast-check, 50,000 cases per property
+        env:
+          FC_NUM_RUNS: "50000"
+        run: node --test test/properties.test.ts
