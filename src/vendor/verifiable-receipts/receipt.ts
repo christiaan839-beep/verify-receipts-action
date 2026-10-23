@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/conformance/verify-v2.mjs at commit
-// 55d30b72b277a025e7a20e0952aa5813241ba38f. Licence:
+// 03b38ee2d28080a2a4aa0810dbb1dfcd447379fd. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: converted to TypeScript with explicit types,
@@ -78,6 +78,10 @@ export function verifyV2Receipt(receipt: unknown, publicKey: KeyObject): VerifyR
     return { ok: false, reason: "signature base64 invalid" };
   }
   const sigBytes = Buffer.from(signature.slice(3), "base64");
+  // One valid spelling: non-zero padding bits decode to the same bytes.
+  if (sigBytes.toString("base64") !== signature.slice(3)) {
+    return { ok: false, reason: "signature base64 invalid: not canonical" };
+  }
   const canonicalBytes = Buffer.from(canonical, "utf8");
 
   if (contentHash != null && typeof contentHash !== "string") {
