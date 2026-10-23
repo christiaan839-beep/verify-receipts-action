@@ -7,13 +7,22 @@ name: self-test
 on:
   push:
   pull_request:
+  workflow_call:
 
 permissions:
-  contents: read
+  contents: read # check out the action and the self-test files
+
+# Keyed on the calling workflow too, so a tag push's own run never cancels
+# the run that release.yml makes; only pull request runs are superseded.
+concurrency:
+  group: ${{ github.workflow }}-self-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   self-test:
+    name: Self-test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -21,7 +30,7 @@ jobs:
 
       - name: Valid receipts, in the log
         id: valid
-        uses: ./
+        uses: $/
         with:
           receipts: selftest/receipts/valid/*.json
           public-keys-file: selftest/keys/issuer.pem
@@ -41,7 +50,7 @@ jobs:
 
       - name: Forged and tampered receipts, reported as warnings
         id: invalid
-        uses: ./
+        uses: $/
         with:
           receipts: selftest/receipts/invalid/*.json
           public-keys-file: selftest/keys/issuer.pem
@@ -63,7 +72,7 @@ jobs:
       - name: Forged and tampered receipts fail the step
         id: strict
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           receipts: selftest/receipts/invalid/*.json
           public-keys-file: selftest/keys/issuer.pem
@@ -71,7 +80,7 @@ jobs:
       - name: Valid receipts with no inclusion proof
         id: unproven
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           receipts: selftest/receipts/valid/*.json
           public-keys-file: selftest/keys/issuer.pem

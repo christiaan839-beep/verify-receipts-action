@@ -5,13 +5,22 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_call:
 
 permissions:
-  contents: read
+  contents: read # check out the code
+
+# Keyed on the calling workflow too, so a tag push's own run never cancels
+# the run that release.yml makes; only pull request runs are superseded.
+concurrency:
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
+    name: Check (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         node: [22, 24]
