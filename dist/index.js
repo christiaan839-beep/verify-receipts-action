@@ -22314,7 +22314,7 @@ function verifyV2Receipt(receipt, publicKey) {
       return { ok: false, reason: "contentHash mismatch with canonical bytes" };
     }
   }
-  let verified = false;
+  let verified;
   try {
     verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);
   } catch {
