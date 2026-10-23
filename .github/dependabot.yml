@@ -1,0 +1,27 @@
+# Weekly updates, grouped per ecosystem. A release must be 14 days old
+# before Dependabot proposes it, so a compromised release has time to be
+# caught and pulled first. Security updates are not delayed. An npm update
+# changes dist/, so its pull request needs `npm run build` and a commit of
+# dist/ before CI passes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      npm-development:
+        dependency-type: development
+      npm-production:
+        dependency-type: production

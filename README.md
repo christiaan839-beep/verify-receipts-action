@@ -1,5 +1,7 @@
 # verify-receipts-action
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/christiaan839-beep/verify-receipts-action/badge)](https://scorecard.dev/viewer/?uri=github.com/christiaan839-beep/verify-receipts-action)
+
 A GitHub Action that fails a build when a verifiable receipt is forged or tampered with. It checks each receipt's Ed25519
 signature against public keys pinned in the workflow, and, when given a signed tree head and inclusion proofs, checks that
 each receipt is in the transparency log. Every check runs inside the job, on files in the checkout. The action makes no

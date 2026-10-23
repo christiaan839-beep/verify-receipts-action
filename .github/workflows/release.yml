@@ -1,0 +1,118 @@
+# Publishes a release from a vX.Y.Z tag that matches package.json and points
+# at a commit on main: runs the CI and self-test workflows, attests the
+# build provenance of dist/index.js (the code the action runs) and, after a
+# maintainer approves the protected "release" environment, creates the
+# GitHub release. Releases are immutable; users pin the action to the
+# release commit's full SHA. RELEASING.md has the steps.
+#
+# Actions are pinned to full commit SHAs (the tag each SHA had when pinned
+# is in the comment). Every job starts with no token permissions and asks
+# only for what it uses.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # read package.json and main's history
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: The tag matches package.json and is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag must be vX.Y.Z"; exit 1; }
+          have=$(node -p "require('./package.json').version")
+          [ "v$have" = "$TAG" ] || { echo "::error::tag says $TAG, package.json says $have"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::the tagged commit is not on main"; exit 1; }
+
+  ci:
+    name: CI
+    needs: plan
+    uses: $/.github/workflows/ci.yml
+    permissions:
+      contents: read # check out the code to test
+
+  self-test:
+    name: Self-test
+    needs: plan
+    uses: $/.github/workflows/self-test.yml
+    permissions:
+      contents: read # check out the action and the self-test files
+
+  attest:
+    name: Attest the bundle
+    needs: [ci, self-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the code
+      id-token: write # sign the provenance attestation (Sigstore)
+      attestations: write # store the attestation on GitHub
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/index.js
+            action.yml
+      - name: Collect the release files
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          cp dist/index.js action.yml "$RUNNER_TEMP/assets/"
+          cp "$BUNDLE" "$RUNNER_TEMP/assets/attestation.sigstore.json"
+          (cd "$RUNNER_TEMP/assets" && sha256sum index.js action.yml > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets
+          path: ${{ runner.temp }}/assets/
+          if-no-files-found: error
+
+  github-release:
+    name: Create the GitHub release
+    needs: attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write # create the release and upload its files
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: assets
+          path: assets
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "Pin this release by its commit:"
+            echo
+            echo '```yaml'
+            echo "- uses: ${GH_REPO}@${GITHUB_SHA} # ${TAG}"
+            echo '```'
+            echo
+          } > "$notes"
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$notes" --generate-notes assets/*
