@@ -6,6 +6,7 @@
  * runs the offline checks in verify.ts, and reports through outputs, the
  * job summary and annotations. It makes no network request.
  */
+import { realpathSync } from "node:fs";
 import { appendFile, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -31,10 +32,23 @@ function workspace(): string {
   return process.env.GITHUB_WORKSPACE ?? process.cwd();
 }
 
+/** Glob results carry the real path, so a workspace reached through a symlink is matched both ways. */
+function workspaceRoots(): string[] {
+  const ws = resolve(workspace());
+  try {
+    const real = realpathSync(ws);
+    return real === ws ? [ws] : [ws, real];
+  } catch {
+    return [ws];
+  }
+}
+
 function display(absPath: string): string {
-  const rel = relative(workspace(), absPath);
-  const shown = rel === "" || rel.startsWith("..") || isAbsolute(rel) ? absPath : rel;
-  return shown.split(sep).join("/");
+  for (const root of workspaceRoots()) {
+    const rel = relative(root, absPath);
+    if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return rel.split(sep).join("/");
+  }
+  return absPath.split(sep).join("/");
 }
 
 function lines(name: string): string[] {
