@@ -19150,6 +19150,7 @@ var require_undici = __commonJS({
 });
 
 // src/main.ts
+import { realpathSync } from "node:fs";
 import { appendFile as appendFile2, readFile, stat as stat2 } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep as sep5 } from "node:path";
 
@@ -22632,10 +22633,21 @@ var InputError = class extends Error {
 function workspace() {
   return process.env.GITHUB_WORKSPACE ?? process.cwd();
 }
+function workspaceRoots() {
+  const ws = resolve(workspace());
+  try {
+    const real = realpathSync(ws);
+    return real === ws ? [ws] : [ws, real];
+  } catch {
+    return [ws];
+  }
+}
 function display(absPath) {
-  const rel = relative(workspace(), absPath);
-  const shown = rel === "" || rel.startsWith("..") || isAbsolute(rel) ? absPath : rel;
-  return shown.split(sep5).join("/");
+  for (const root of workspaceRoots()) {
+    const rel = relative(root, absPath);
+    if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return rel.split(sep5).join("/");
+  }
+  return absPath.split(sep5).join("/");
 }
 function lines(name) {
   return getInput(name).split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !l.startsWith("#"));
