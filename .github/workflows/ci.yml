@@ -17,6 +17,36 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  vendor:
+    name: Vendored copies match verifiable-receipts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The verifiable-receipts commit src/vendor/ and test/fixtures/ come from.
+      VR_REF: 03b38ee2d28080a2a4aa0810dbb1dfcd447379fd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: christiaan839-beep/verifiable-receipts
+          ref: ${{ env.VR_REF }}
+          path: upstream
+          persist-credentials: false
+      - name: Every vendored file names VR_REF, and the fixtures are byte-identical
+        run: |
+          set -euo pipefail
+          for f in src/vendor/verifiable-receipts/*.ts third_party/verifiable-receipts/README.md test/fixtures/conformance/README.md; do
+            grep -q "$VR_REF" "$f" || { echo "::error file=$f::does not name $VR_REF"; exit 1; }
+          done
+          up=upstream/packages/verifiable-receipts/conformance
+          diff <(cd "$up/fixtures" && ls) <(cd test/fixtures/conformance && ls -- *.json)
+          for f in "$up"/fixtures/*.json; do
+            cmp "$f" "test/fixtures/conformance/$(basename "$f")"
+          done
+          cmp "$up/public-key.pem" test/fixtures/conformance/public-key.pem
+
   check:
     name: Check (Node ${{ matrix.node }})
     runs-on: ubuntu-latest

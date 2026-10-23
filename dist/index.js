@@ -22301,6 +22301,9 @@ function verifyV2Receipt(receipt, publicKey) {
     return { ok: false, reason: "signature base64 invalid" };
   }
   const sigBytes = Buffer.from(signature.slice(3), "base64");
+  if (sigBytes.toString("base64") !== signature.slice(3)) {
+    return { ok: false, reason: "signature base64 invalid: not canonical" };
+  }
   const canonicalBytes = Buffer.from(canonical, "utf8");
   if (contentHash != null && typeof contentHash !== "string") {
     return { ok: false, reason: "contentHash must be a string" };
@@ -22357,6 +22360,13 @@ function leafHash(data) {
 function innerHash(leftHex, rightHex) {
   return createHash3("sha256").update(INNER_PREFIX).update(Buffer.from(leftHex, "hex")).update(Buffer.from(rightHex, "hex")).digest("hex");
 }
+var HASH_HEX = /^[0-9a-f]{64}$/;
+function isHashHex(x) {
+  return typeof x === "string" && HASH_HEX.test(x);
+}
+function isCount(n) {
+  return Number.isSafeInteger(n) && n >= 0;
+}
 function bitsLen(n) {
   let len = 0;
   let x = n;
@@ -22376,11 +22386,14 @@ function onesCount(n) {
   return c;
 }
 function verifyInclusionProof(leafHashHex, idx, treeSize, proof, rootHashHex) {
-  if (idx < 0 || idx >= treeSize) return false;
+  if (!isCount(idx) || !isCount(treeSize)) return false;
+  if (idx >= treeSize) return false;
+  if (!isHashHex(leafHashHex) || !isHashHex(rootHashHex)) return false;
+  if (!Array.isArray(proof) || !proof.every(isHashHex)) return false;
   if (treeSize === 1) {
     return proof.length === 0 && leafHashHex === rootHashHex;
   }
-  const inner = bitsLen(idx ^ treeSize - 1);
+  const inner = bitsLen(Number(BigInt(idx) ^ BigInt(treeSize - 1)));
   const border = onesCount(Math.floor(idx / Math.pow(2, inner)));
   if (proof.length !== inner + border) return false;
   let hash = leafHashHex;
@@ -22472,7 +22485,7 @@ function checkTimes(signed, now, maxAgeDays) {
   }
   return null;
 }
-function isCount(v, min) {
+function isCount2(v, min) {
   return typeof v === "number" && Number.isSafeInteger(v) && v >= min;
 }
 function parseProofEntry(v) {
@@ -22481,8 +22494,8 @@ function parseProofEntry(v) {
   if (typeof leafHashHex !== "string" || !HEX64.test(leafHashHex)) {
     return "leafHashHex must be 64 lowercase hex characters";
   }
-  if (!isCount(leafIndex, 0)) return "leafIndex must be a non-negative integer";
-  if (!isCount(treeSize, 1)) return "treeSize must be a positive integer";
+  if (!isCount2(leafIndex, 0)) return "leafIndex must be a non-negative integer";
+  if (!isCount2(treeSize, 1)) return "treeSize must be a positive integer";
   if (!Array.isArray(auditPath) || !auditPath.every((h) => typeof h === "string" && HEX64.test(h))) {
     return "auditPath must be an array of 64-character lowercase hex hashes";
   }
@@ -22520,7 +22533,7 @@ function readTreeHead(log) {
   if (!isObject2(sth)) return "tree head must be a JSON object";
   if (sth.v !== 1) return "tree head v must be 1";
   if (typeof sth.logId !== "string" || sth.logId === "") return "tree head logId must be a non-empty string";
-  if (!isCount(sth.treeSize, 1)) return "tree head treeSize must be a positive integer";
+  if (!isCount2(sth.treeSize, 1)) return "tree head treeSize must be a positive integer";
   if (typeof sth.rootHash !== "string" || !HEX64.test(sth.rootHash)) {
     return "tree head rootHash must be 64 lowercase hex characters";
   }

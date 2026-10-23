@@ -20,8 +20,8 @@ const NOW = new Date("2026-10-23T00:00:00Z");
 const files = readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).sort();
 
 describe("conformance corpus", () => {
-  it("holds the 14 fixtures of the source corpus", () => {
-    assert.equal(files.length, 14);
+  it("holds the 23 fixtures of the source corpus", () => {
+    assert.equal(files.length, 23);
   });
 
   for (const name of files.filter((f) => f.startsWith("v2-"))) {

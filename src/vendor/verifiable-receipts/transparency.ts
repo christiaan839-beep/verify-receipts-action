@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/src/transparency.ts at commit
-// 55d30b72b277a025e7a20e0952aa5813241ba38f. Licence:
+// 03b38ee2d28080a2a4aa0810dbb1dfcd447379fd. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: only the verification half is kept
@@ -38,6 +38,18 @@ export function innerHash(leftHex: string, rightHex: string): string {
     .digest("hex");
 }
 
+/** A hash on the wire: 32 bytes, written as exactly 64 lowercase hex digits. */
+const HASH_HEX = /^[0-9a-f]{64}$/;
+
+function isHashHex(x: unknown): x is string {
+  return typeof x === "string" && HASH_HEX.test(x);
+}
+
+/** A leaf index or tree size: a whole number that a double holds exactly. */
+function isCount(n: unknown): n is number {
+  return Number.isSafeInteger(n) && (n as number) >= 0;
+}
+
 /** Number of bits required to represent `n` (with `bitsLen(0) === 0`). */
 function bitsLen(n: number): number {
   let len = 0;
@@ -66,6 +78,10 @@ function onesCount(n: number): number {
  * Algorithm: the standard CT (RFC 6962) verifier decomposition into an
  * "inner" segment that walks the bits of `idx` and a "border" segment of
  * left-siblings up the right edge.
+ *
+ * Returns false, never throws, for malformed input: `idx` and `treeSize`
+ * must be safe integers with 0 <= idx < treeSize, and every hash must be
+ * 64 lowercase hex digits (32 bytes).
  */
 export function verifyInclusionProof(
   leafHashHex: string,
@@ -74,11 +90,16 @@ export function verifyInclusionProof(
   proof: readonly string[],
   rootHashHex: string,
 ): boolean {
-  if (idx < 0 || idx >= treeSize) return false;
+  if (!isCount(idx) || !isCount(treeSize)) return false;
+  if (idx >= treeSize) return false;
+  if (!isHashHex(leafHashHex) || !isHashHex(rootHashHex)) return false;
+  if (!Array.isArray(proof) || !proof.every(isHashHex)) return false;
   if (treeSize === 1) {
     return proof.length === 0 && leafHashHex === rootHashHex;
   }
-  const inner = bitsLen(idx ^ (treeSize - 1));
+  // BigInt: `^` on numbers truncates to 32 bits, which breaks trees of
+  // 2^31 leaves or more.
+  const inner = bitsLen(Number(BigInt(idx) ^ BigInt(treeSize - 1)));
   const border = onesCount(Math.floor(idx / Math.pow(2, inner)));
   if (proof.length !== inner + border) return false;
 
