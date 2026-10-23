@@ -21,12 +21,12 @@ jobs:
   receipts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Verify receipts
         id: receipts
-        uses: OWNER/verify-receipts-action@FULL_COMMIT_SHA
+        uses: christiaan839-beep/verify-receipts-action@FULL_COMMIT_SHA # the release's commit
         with:
           receipts: |
             receipts/**/*.json
@@ -47,20 +47,23 @@ change to them shows in review.
 
 | Input                  | Required | Default | Meaning                                                                                                    |
 | ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `receipts`             | yes      |         | Glob patterns, one per line, for the receipt files. Lines starting with `#` are ignored.                  |
+| `receipts`             | yes      |         | Glob patterns, one per line, for the receipt files.                                                        |
 | `public-keys`          | no       | `""`    | Pinned Ed25519 public keys as PEM `PUBLIC KEY` blocks. A receipt verifies under any one of them.           |
 | `public-keys-file`     | no       | `""`    | Paths, one per line, of files holding PEM `PUBLIC KEY` blocks. Combined with `public-keys`.                |
 | `tree-head`            | no       | `""`    | Path of the log's signed tree head. When set, every receipt also needs an inclusion proof.                |
 | `log-public-keys`      | no       | `""`    | Pinned Ed25519 public keys (PEM) of the log. Required with `tree-head`.                                    |
 | `log-public-keys-file` | no       | `""`    | Paths, one per line, of files holding the log's PEM public keys.                                           |
 | `inclusion-proofs`     | no       | `""`    | Glob patterns, one per line, for inclusion proof files.                                                    |
-| `max-age-days`         | no       | `""`    | When set, a receipt's signed `issuedAt` must be at most this many days old and not in the future.         |
-| `fail-on-invalid`      | no       | `true`  | `true` fails the step on any failure. `false` reports failures as warnings and the step passes.            |
+| `max-age-days`         | no       | `""`    | Whole days. A receipt's signed `issuedAt` must be at most this old and at most five minutes in the future. |
+| `fail-on-invalid`      | no       | `true`  | `true` fails the step on any failure, including an unusable tree head or proof file. `false` warns.        |
 | `fail-on-empty`        | no       | `true`  | `true` fails the step when the `receipts` patterns match no file.                                          |
 
-At least one receipt key is required, from `public-keys`, `public-keys-file` or both. `log-public-keys` and
-`inclusion-proofs` without `tree-head` are a configuration error, as is `tree-head` without a log key. A private key in
-any key input is a configuration error.
+In the inputs that take one entry per line (`receipts`, `public-keys-file`, `log-public-keys-file`, `inclusion-proofs`),
+blank lines and lines starting with `#` are ignored. Paths and patterns are relative to the workspace.
+
+At least one receipt key is required, from `public-keys`, `public-keys-file` or both. `log-public-keys`,
+`log-public-keys-file` and `inclusion-proofs` without `tree-head` are a configuration error, as is `tree-head` without a
+log key. A private key in any key input is a configuration error.
 
 ## Outputs
 
@@ -72,8 +75,9 @@ any key input is a configuration error.
 | `failures` | JSON array of `{"file", "entry", "reason"}`, one per failure. `entry` is the index in an array file, or `null`. |
 
 The action also writes a job summary with one row per receipt (file, result, the fingerprint of the key that verified
-it, its leaf index, or the reason it failed), and an error annotation on each failing file. With `fail-on-invalid: false`
-the annotations are warnings. A key's fingerprint is `sha256:` and the first 16 hex characters of the SHA-256 of its
+it, its leaf index, or the reason it failed), and an error annotation on each failing file: "Receipt verification failed"
+on a receipt file, "Tree head or inclusion proof file unusable" on a log file. With `fail-on-invalid: false` the
+annotations are warnings. A key's fingerprint is `sha256:` and the first 16 hex characters of the SHA-256 of its
 SPKI DER encoding.
 
 ## File formats
@@ -99,7 +103,8 @@ For each receipt, in this order:
 2. `signature` starts with `v2=`. Any other version prefix (`v1=`, `v3=` and so on) fails as an unsupported algorithm.
 3. The checks of the verifiable-receipts v2 verifier: `canonical` and `signature` are present, the base64 is standard,
    `contentHash` matches, the Ed25519 signature verifies over the UTF-8 bytes of `canonical` under one of the pinned keys,
-   `canonical` is a JSON object, and every other top-level field agrees with it.
+   `canonical` is a JSON object, and every other top-level field agrees with it. A number of magnitude 2^53 or more in
+   such a field agrees with nothing.
 4. If the signed `canonical` has `expiresAt`, it is an ISO 8601 date-time that has not passed.
 5. If `max-age-days` is set, the signed `issuedAt` is an ISO 8601 date-time no older than that and at most five minutes
    in the future.
@@ -134,8 +139,9 @@ Time checks read only fields inside the signed `canonical`. A field beside it is
 - One tree head per run. Every inclusion proof must be for that tree head's size; consistency proofs between tree sizes
   are not supported.
 - Keys carry no validity period: a pinned key verifies receipts until it is removed from the inputs.
-- Numbers in receipts are compared as JavaScript doubles, as in the verifiable-receipts TypeScript verifier. Integers
-  beyond 2^53 that differ only past that precision compare equal.
+- A top-level field beside `canonical` cannot hold a number of magnitude 2^53 or more: `JSON.parse` rounds such a
+  number, so the verifier rejects the field instead of comparing rounded values. Inside `canonical` any number is
+  allowed, because the signature covers its bytes.
 - The runtime is `node20`, as declared in `action.yml`. The unit tests need Node 22.18 or later, which runs TypeScript
   directly.
 
@@ -149,9 +155,10 @@ it needs in `src/vendor/verifiable-receipts/`:
 - `transparency.ts` is the verification half of `packages/verifiable-receipts/src/transparency.ts`: `leafHash`,
   `innerHash`, `verifyInclusionProof` and `canonicalizeSth`.
 
-Both come from commit `55d30b72b277a025e7a20e0952aa5813241ba38f` of verifiable-receipts, under the Apache License 2.0.
+Both come from commit `808fa4c923fbb4e0b8fd064487657cc2ecd0148e` of verifiable-receipts, under the Apache License 2.0.
 Each file's header says what changed. The licence is in `third_party/verifiable-receipts/LICENSE`. The conformance
 fixtures in `test/fixtures/conformance/` are copied from the same commit; `test/fixtures/conformance/README.md` says so.
+The `vendor` job in `.github/workflows/ci.yml` checks the copies against that commit, named there as `VR_REF`.
 
 ## Development
 

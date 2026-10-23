@@ -29,7 +29,6 @@ const result = await build({
   logLevel: "warning",
 });
 
-// Collect the package directory of every bundled node_modules input.
 const packages = new Set();
 for (const input of Object.keys(result.metafile.inputs)) {
   const m = /^(.*node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(input);

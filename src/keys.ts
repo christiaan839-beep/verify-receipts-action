@@ -27,7 +27,9 @@ export function parsePublicKeys(text: string, source: string): PinnedKey[] {
     blocks++;
     const label = match[1] ?? "";
     if (label.includes("PRIVATE")) {
-      throw new KeyError(`${source}: block ${blocks} is a private key; supply public keys only`);
+      throw new KeyError(
+        `${source}: block ${blocks} is a private key; pin the matching public key instead (openssl pkey -pubout derives it)`,
+      );
     }
     if (label !== "PUBLIC KEY") {
       throw new KeyError(`${source}: block ${blocks} is "${label}", expected "PUBLIC KEY"`);
@@ -46,12 +48,14 @@ export function parsePublicKeys(text: string, source: string): PinnedKey[] {
     keys.push({ key, fingerprint: fingerprint(key) });
   }
   if (blocks === 0 && text.trim() !== "") {
-    throw new KeyError(`${source}: no PEM "PUBLIC KEY" block found`);
+    throw new KeyError(
+      `${source}: no PEM "PUBLIC KEY" block found; include the -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- lines`,
+    );
   }
   return keys;
 }
 
-export function fingerprint(key: KeyObject): string {
+function fingerprint(key: KeyObject): string {
   const der = key.export({ type: "spki", format: "der" });
   return "sha256:" + createHash("sha256").update(der).digest("hex").slice(0, 16);
 }

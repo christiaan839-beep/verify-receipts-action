@@ -3,7 +3,7 @@ Copyright 2026 Christiaan de Wet / Sovereign Matrix
 
 This product includes code from verifiable-receipts
 (https://github.com/christiaan839-beep/verifiable-receipts), commit
-55d30b72b277a025e7a20e0952aa5813241ba38f, licensed under the Apache License,
+808fa4c923fbb4e0b8fd064487657cc2ecd0148e, licensed under the Apache License,
 Version 2.0. Copyright 2026 Christiaan de Wet / Sovereign Matrix. The vendored
 files are in src/vendor/verifiable-receipts/, and the conformance fixtures in
 test/fixtures/conformance/ and selftest/receipts/. Their licence is in

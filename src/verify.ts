@@ -24,7 +24,7 @@ export interface SourceFile {
   content: string;
 }
 
-export interface LogOptions {
+interface LogOptions {
   treeHead: SourceFile;
   keys: readonly PinnedKey[];
   proofs: readonly SourceFile[];
@@ -56,7 +56,7 @@ export interface FileError {
   reason: string;
 }
 
-export interface TreeHeadInfo {
+interface TreeHeadInfo {
   file: string;
   logId: string;
   treeSize: number;
@@ -152,6 +152,7 @@ function checkTimes(
 
 interface Proof {
   file: string;
+  leafHashHex: string;
   leafIndex: number;
   treeSize: number;
   auditPath: string[];
@@ -161,7 +162,7 @@ function isCount(v: unknown, min: number): v is number {
   return typeof v === "number" && Number.isSafeInteger(v) && v >= min;
 }
 
-function parseProofEntry(v: unknown): Proof | string {
+function parseProofEntry(v: unknown, file: string): Proof | string {
   if (!isObject(v)) return "an inclusion proof must be an object";
   const { leafHashHex, leafIndex, treeSize, auditPath } = v;
   if (typeof leafHashHex !== "string" || !HEX64.test(leafHashHex)) {
@@ -172,7 +173,7 @@ function parseProofEntry(v: unknown): Proof | string {
   if (!Array.isArray(auditPath) || !auditPath.every((h) => typeof h === "string" && HEX64.test(h))) {
     return "auditPath must be an array of 64-character lowercase hex hashes";
   }
-  return { file: "", leafIndex, treeSize, auditPath: auditPath as string[] };
+  return { file, leafHashHex, leafIndex, treeSize, auditPath: auditPath as string[] };
 }
 
 /** Reads proof files into a map from leaf hash to the proofs offered for it. */
@@ -186,17 +187,15 @@ function readProofs(files: readonly SourceFile[], errors: FileError[]): Map<stri
     }
     const entries = Array.isArray(parsed.value) ? parsed.value : [parsed.value];
     entries.forEach((entry, i) => {
-      const proof = parseProofEntry(entry);
+      const proof = parseProofEntry(entry, f.file);
       if (typeof proof === "string") {
         const where = Array.isArray(parsed.value) ? ` (entry ${i})` : "";
         errors.push({ file: f.file, reason: `${proof}${where}` });
         return;
       }
-      const leaf = (entry as { leafHashHex: string }).leafHashHex;
-      proof.file = f.file;
-      const list = byLeaf.get(leaf) ?? [];
+      const list = byLeaf.get(proof.leafHashHex) ?? [];
       list.push(proof);
-      byLeaf.set(leaf, list);
+      byLeaf.set(proof.leafHashHex, list);
     });
   }
   return byLeaf;

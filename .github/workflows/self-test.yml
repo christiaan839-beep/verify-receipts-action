@@ -1,4 +1,4 @@
-# Runs the action from this checkout (uses: ./) on the files in selftest/
+# Runs the action at the commit under test (uses: $/) on the files in selftest/
 # and checks its outputs: valid receipts pass with inclusion confirmed,
 # forged and tampered receipts fail, and a receipt with no inclusion proof
 # fails.
