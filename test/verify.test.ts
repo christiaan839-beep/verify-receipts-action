@@ -1,0 +1,387 @@
+// Copyright 2026 Christiaan de Wet / Sovereign Matrix
+// SPDX-License-Identifier: Apache-2.0
+
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { describe, it } from "node:test";
+
+import { verifyReceipts, type ReceiptResult, type VerifyOptions } from "../src/verify.ts";
+import { buildLog, makeKey, rfcLeafHash, sampleBody, signReceipt, signTreeHead, type SignedReceipt } from "./helpers.ts";
+
+const NOW = new Date("2026-10-23T12:00:00Z");
+const issuer = makeKey();
+const other = makeKey();
+const logKey = makeKey();
+
+function one(content: unknown, options: Partial<VerifyOptions> = {}): ReceiptResult {
+  const text = typeof content === "string" ? content : JSON.stringify(content);
+  const report = verifyReceipts([{ file: "r.json", content: text }], { keys: [issuer.pinned], now: NOW, ...options });
+  assert.equal(report.results.length, 1);
+  const [r] = report.results;
+  assert.ok(r);
+  return r;
+}
+
+function rehash(r: SignedReceipt): SignedReceipt {
+  const hex = createHash("sha256").update(r.canonical, "utf8").digest("hex");
+  return { ...r, contentHash: "sha256:" + hex };
+}
+
+describe("valid receipts", () => {
+  it("verifies a receipt signed by a pinned key and names the key", () => {
+    const r = one(signReceipt(sampleBody(), issuer.privateKey));
+    assert.equal(r.ok, true, r.reason);
+    assert.equal(r.key, issuer.pinned.fingerprint);
+  });
+
+  it("verifies a receipt with only the envelope fields", () => {
+    const { canonical, contentHash, signature } = signReceipt(sampleBody(), issuer.privateKey);
+    assert.equal(one({ canonical, contentHash, signature }).ok, true);
+  });
+
+  it("verifies every receipt in a file holding an array", () => {
+    const a = signReceipt(sampleBody({ receiptId: "a" }), issuer.privateKey);
+    const b = signReceipt(sampleBody({ receiptId: "b" }), issuer.privateKey);
+    const report = verifyReceipts([{ file: "many.json", content: JSON.stringify([a, b]) }], {
+      keys: [issuer.pinned],
+      now: NOW,
+    });
+    assert.deepEqual(
+      report.results.map((r) => [r.index, r.ok]),
+      [
+        [0, true],
+        [1, true],
+      ],
+    );
+  });
+
+  it("accepts a receipt signed by any one of several pinned keys", () => {
+    const r = one(signReceipt(sampleBody(), issuer.privateKey), { keys: [other.pinned, issuer.pinned] });
+    assert.equal(r.ok, true, r.reason);
+    assert.equal(r.key, issuer.pinned.fingerprint);
+  });
+});
+
+describe("tampered receipts", () => {
+  it("rejects a canonical edited after signing, even with a recomputed contentHash", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const forged = rehash({ ...signed, canonical: signed.canonical.replace('"pass"', '"fail"'), overall: "fail" });
+    const r = one(forged);
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /signature does not verify/);
+  });
+
+  it("rejects a canonical edited without updating contentHash", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const r = one({ ...signed, canonical: signed.canonical.replace("sample-agent", "other-agent") });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /contentHash mismatch/);
+  });
+
+  it("rejects an envelope field that disagrees with the signed canonical", () => {
+    const r = one({ ...signReceipt(sampleBody(), issuer.privateKey), overall: "fail" });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /envelope field "overall" disagrees/);
+  });
+
+  it("rejects an envelope field the signer never signed", () => {
+    const r = one({ ...signReceipt(sampleBody(), issuer.privateKey), approvedBy: "someone" });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /"approvedBy" is not in the signed canonical/);
+  });
+
+  it("rejects a flipped signature bit", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const sig = Buffer.from(signed.signature.slice(3), "base64");
+    sig[0] = (sig[0] ?? 0) ^ 1;
+    assert.equal(one({ ...signed, signature: "v2=" + sig.toString("base64") }).ok, false);
+  });
+});
+
+describe("wrong key", () => {
+  it("rejects a receipt signed by a key that is not pinned", () => {
+    const r = one(signReceipt(sampleBody(), other.privateKey));
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /signature does not verify under the supplied public key/);
+  });
+
+  it("names the number of keys tried when several are pinned", () => {
+    const stranger = makeKey();
+    const r = one(signReceipt(sampleBody(), stranger.privateKey), { keys: [issuer.pinned, other.pinned] });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /any of the 2 pinned public keys/);
+  });
+
+  it("reports the envelope problem, not a key problem, when one key verifies the signature", () => {
+    const tampered = { ...signReceipt(sampleBody(), issuer.privateKey), overall: "fail" };
+    const r = one(tampered, { keys: [other.pinned, issuer.pinned] });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /envelope field "overall" disagrees/);
+  });
+});
+
+describe("expiry and age", () => {
+  it("rejects a receipt whose signed expiresAt has passed", () => {
+    const r = one(signReceipt(sampleBody({ expiresAt: "2026-10-22T00:00:00Z" }), issuer.privateKey));
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /expired at 2026-10-22T00:00:00Z/);
+  });
+
+  it("accepts a receipt whose signed expiresAt is still ahead", () => {
+    assert.equal(one(signReceipt(sampleBody({ expiresAt: "2026-12-01T00:00:00Z" }), issuer.privateKey)).ok, true);
+  });
+
+  it("rejects an expiresAt that is not an ISO 8601 date-time", () => {
+    const r = one(signReceipt(sampleBody({ expiresAt: "next week" }), issuer.privateKey));
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /expiresAt is not an ISO 8601/);
+  });
+
+  it("rejects a receipt older than max-age-days", () => {
+    const r = one(signReceipt(sampleBody({ issuedAt: "2026-09-01T00:00:00Z" }), issuer.privateKey), {
+      maxAgeDays: 30,
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /older than 30 days/);
+  });
+
+  it("accepts a receipt within max-age-days", () => {
+    const r = one(signReceipt(sampleBody({ issuedAt: "2026-10-20T00:00:00Z" }), issuer.privateKey), {
+      maxAgeDays: 30,
+    });
+    assert.equal(r.ok, true, r.reason);
+  });
+
+  it("rejects a receipt issued in the future when max-age-days is set", () => {
+    const r = one(signReceipt(sampleBody({ issuedAt: "2027-01-01T00:00:00Z" }), issuer.privateKey), {
+      maxAgeDays: 30,
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /in the future/);
+  });
+
+  it("rejects a receipt without issuedAt when max-age-days is set", () => {
+    const body = sampleBody();
+    delete body.issuedAt;
+    const r = one(signReceipt(body, issuer.privateKey), { maxAgeDays: 30 });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /no signed issuedAt/);
+  });
+
+  it("does not trust an unsigned expiresAt beside the envelope", () => {
+    // An expiresAt added outside the canonical is an unsigned envelope field.
+    const r = one({ ...signReceipt(sampleBody(), issuer.privateKey), expiresAt: "2030-01-01T00:00:00Z" });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /not in the signed canonical/);
+  });
+});
+
+describe("unknown algorithms", () => {
+  for (const prefix of ["v1", "v3", "v9"]) {
+    it(`rejects a ${prefix}= signature as unsupported`, () => {
+      const signed = signReceipt(sampleBody(), issuer.privateKey);
+      const r = one({ ...signed, signature: `${prefix}=${signed.signature.slice(3)}` });
+      assert.equal(r.ok, false);
+      assert.match(r.reason ?? "", new RegExp(`unsupported signature algorithm "${prefix}="`));
+    });
+  }
+
+  it("rejects a signature with no version prefix", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const r = one({ ...signed, signature: signed.signature.slice(3) });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /signature is not v2/);
+  });
+});
+
+describe("malformed input", () => {
+  const cases: [string, string, RegExp][] = [
+    ["not JSON", "{ receipt", /not valid JSON/],
+    ["a JSON number", "42", /receipt object or an array/],
+    ["a JSON string", '"v2=abc"', /receipt object or an array/],
+    ["null", "null", /receipt object or an array/],
+    ["an empty array", "[]", /empty array/],
+    ["an empty object", "{}", /missing canonical projection/],
+    ["no signature", JSON.stringify({ canonical: "{}" }), /missing signature/],
+    ["bad base64", JSON.stringify({ canonical: "{}", signature: "v2=***" }), /base64 invalid/],
+    ["a numeric contentHash", JSON.stringify({ canonical: "{}", signature: "v2=AAAA", contentHash: 7 }), /contentHash must be a string/],
+  ];
+  for (const [label, content, reason] of cases) {
+    it(`rejects ${label}`, () => {
+      const r = one(content);
+      assert.equal(r.ok, false);
+      assert.match(r.reason ?? "", reason);
+    });
+  }
+
+  it("rejects a non-object entry in an array and still checks the others", () => {
+    const good = signReceipt(sampleBody(), issuer.privateKey);
+    const report = verifyReceipts([{ file: "mixed.json", content: JSON.stringify([good, 5]) }], {
+      keys: [issuer.pinned],
+      now: NOW,
+    });
+    assert.deepEqual(
+      report.results.map((r) => [r.index, r.ok, r.reason]),
+      [
+        [0, true, undefined],
+        [1, false, "receipt must be an object"],
+      ],
+    );
+  });
+
+  it("rejects a signed canonical that is a JSON array", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const forged = rehash({ ...signed, canonical: "[1]" });
+    // The signature no longer covers the bytes, so this fails at the signature.
+    assert.equal(one({ canonical: forged.canonical, contentHash: forged.contentHash, signature: forged.signature }).ok, false);
+  });
+});
+
+describe("inclusion in the transparency log", () => {
+  const a = signReceipt(sampleBody({ receiptId: "a" }), issuer.privateKey);
+  const b = signReceipt(sampleBody({ receiptId: "b" }), issuer.privateKey);
+  const c = signReceipt(sampleBody({ receiptId: "c" }), issuer.privateKey);
+  const extra = [rfcLeafHash("x"), rfcLeafHash("y"), rfcLeafHash("z"), rfcLeafHash("w")];
+  const log = buildLog([a, b, c], logKey.privateKey, extra); // seven leaves: an unbalanced tree
+
+  function withLog(
+    receipts: unknown[],
+    treeHead: unknown = log.treeHead,
+    proofs: unknown = log.proofs,
+    keys = [logKey.pinned],
+  ) {
+    return verifyReceipts(
+      receipts.map((r, i) => ({ file: `r${i}.json`, content: JSON.stringify(r) })),
+      {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: {
+          treeHead: { file: "sth.json", content: JSON.stringify(treeHead) },
+          keys,
+          proofs: [{ file: "proofs.json", content: JSON.stringify(proofs) }],
+        },
+      },
+    );
+  }
+
+  it("confirms each receipt's inclusion and reports its leaf index", () => {
+    const report = withLog([a, b, c]);
+    assert.deepEqual(report.fileErrors, []);
+    assert.deepEqual(
+      report.results.map((r) => [r.ok, r.leafIndex]),
+      [
+        [true, 0],
+        [true, 1],
+        [true, 2],
+      ],
+    );
+    assert.equal(report.treeHead?.treeSize, 7);
+    assert.equal(report.treeHead.key, logKey.pinned.fingerprint);
+  });
+
+  it("fails a validly signed receipt that has no inclusion proof", () => {
+    const d = signReceipt(sampleBody({ receiptId: "d" }), issuer.privateKey);
+    const [r] = withLog([d]).results;
+    assert.equal(r?.ok, false);
+    assert.match(r.reason ?? "", /no inclusion proof for leaf/);
+    assert.equal(r.key, issuer.pinned.fingerprint);
+  });
+
+  it("fails when the audit path is altered", () => {
+    const proofs = log.proofs.map((p) => ({ ...p, auditPath: [...(p.auditPath as string[])].reverse() }));
+    const [r] = withLog([a], log.treeHead, proofs).results;
+    assert.equal(r?.ok, false);
+    assert.match(r.reason ?? "", /does not lead to the tree head's root/);
+  });
+
+  it("fails when the proof claims another leaf index", () => {
+    const proofs = [{ ...log.proofs[0], leafIndex: 1 }];
+    assert.equal(withLog([a], log.treeHead, proofs).results[0]?.ok, false);
+  });
+
+  it("fails when the proof is for another tree size", () => {
+    const proofs = [{ ...log.proofs[0], treeSize: 8 }];
+    const [r] = withLog([a], log.treeHead, proofs).results;
+    assert.equal(r?.ok, false);
+    assert.match(r.reason ?? "", /tree size 8; the tree head has size 7/);
+  });
+
+  it("fails every receipt when the tree head's root was changed after signing", () => {
+    const head = { ...log.treeHead, rootHash: "0".repeat(64) };
+    const report = withLog([a, b], head);
+    assert.ok(report.results.every((r) => !r.ok && (r.reason ?? "").includes("inclusion not confirmed: tree head signature")));
+    assert.deepEqual(report.fileErrors.map((e) => e.file), ["sth.json"]);
+  });
+
+  it("fails when the tree head is signed by a key that is not pinned for the log", () => {
+    const report = withLog([a], log.treeHead, log.proofs, [other.pinned]);
+    assert.equal(report.results[0]?.ok, false);
+    assert.match(report.fileErrors[0]?.reason ?? "", /signature does not verify/);
+  });
+
+  it("does not accept the receipt issuer's key for the tree head unless pinned for the log", () => {
+    const head = signTreeHead({ ...log.treeHead }, issuer.privateKey);
+    assert.equal(withLog([a], head).results[0]?.ok, false);
+  });
+
+  it("rejects a tree head with an unknown signature algorithm", () => {
+    const head = { ...log.treeHead, signature: "v3=" + (log.treeHead.signature ?? "").slice(3) };
+    const report = withLog([a], head);
+    assert.match(report.fileErrors[0]?.reason ?? "", /unsupported signature algorithm "v3="/);
+  });
+
+  const badHeads: [string, unknown, RegExp][] = [
+    ["is not an object", [1], /must be a JSON object/],
+    ["has v 2", { ...log.treeHead, v: 2 }, /v must be 1/],
+    ["has no logId", { ...log.treeHead, logId: "" }, /logId/],
+    ["has a fractional treeSize", { ...log.treeHead, treeSize: 1.5 }, /treeSize/],
+    ["has an upper-case root", { ...log.treeHead, rootHash: log.treeHead.rootHash.toUpperCase() }, /rootHash/],
+    ["has no signature", { ...log.treeHead, signature: undefined }, /no signature/],
+  ];
+  for (const [label, head, reason] of badHeads) {
+    it(`rejects a tree head that ${label}`, () => {
+      const report = withLog([a], head);
+      assert.equal(report.results[0]?.ok, false);
+      assert.match(report.fileErrors[0]?.reason ?? "", reason);
+    });
+  }
+
+  it("rejects a tree head file that is not JSON", () => {
+    const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+      keys: [issuer.pinned],
+      now: NOW,
+      log: { treeHead: { file: "sth.json", content: "nope" }, keys: [logKey.pinned], proofs: [] },
+    });
+    assert.match(report.fileErrors[0]?.reason ?? "", /not valid JSON/);
+    assert.equal(report.results[0]?.ok, false);
+  });
+
+  it("reports malformed proof entries and ignores them", () => {
+    const proofs = [{ leafHashHex: "xyz", leafIndex: 0, treeSize: 7, auditPath: [] }, log.proofs[1]];
+    const report = withLog([a, b], log.treeHead, proofs);
+    assert.match(report.fileErrors[0]?.reason ?? "", /leafHashHex must be 64 lowercase hex characters \(entry 0\)/);
+    assert.deepEqual(
+      report.results.map((r) => r.ok),
+      [false, true],
+    );
+  });
+
+  const badProofs: [string, Record<string, unknown>, RegExp][] = [
+    ["a negative leafIndex", { leafIndex: -1 }, /leafIndex/],
+    ["a zero treeSize", { treeSize: 0 }, /treeSize/],
+    ["a non-hex audit path entry", { auditPath: ["zz"] }, /auditPath/],
+  ];
+  for (const [label, change, reason] of badProofs) {
+    it(`rejects a proof with ${label}`, () => {
+      const report = withLog([a], log.treeHead, { ...log.proofs[0], ...change });
+      assert.match(report.fileErrors[0]?.reason ?? "", reason);
+      assert.equal(report.results[0]?.ok, false);
+    });
+  }
+
+  it("does not check inclusion for a receipt whose signature fails", () => {
+    const [r] = withLog([{ ...a, overall: "fail" }]).results;
+    assert.equal(r?.ok, false);
+    assert.match(r.reason ?? "", /envelope field/);
+  });
+});

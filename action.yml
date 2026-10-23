@@ -1,0 +1,77 @@
+name: Verify receipts offline
+description: >-
+  Fails the build when a verifiable receipt is forged or tampered with. Checks
+  each receipt's Ed25519 signature against pinned public keys, and optionally
+  its inclusion in a transparency log, with no network access.
+author: Sovereign Matrix
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  receipts:
+    description: >-
+      Glob patterns, one per line, for the receipt files to verify. A file holds
+      one receipt object or an array of them. Lines starting with # are ignored.
+    required: true
+  public-keys:
+    description: >-
+      One or more pinned Ed25519 public keys as PEM "PUBLIC KEY" blocks. A
+      receipt verifies if its signature verifies under any one of them.
+    required: false
+    default: ""
+  public-keys-file:
+    description: >-
+      Paths, one per line, of files holding PEM "PUBLIC KEY" blocks. Combined
+      with public-keys. At least one key is required in total.
+    required: false
+    default: ""
+  tree-head:
+    description: >-
+      Path of a signed tree head (JSON) of the transparency log. When set, every
+      receipt must also have an inclusion proof that leads to this tree head's root.
+    required: false
+    default: ""
+  log-public-keys:
+    description: Pinned Ed25519 public keys (PEM) of the log that signed tree-head.
+    required: false
+    default: ""
+  log-public-keys-file:
+    description: Paths, one per line, of files holding the log's PEM public keys.
+    required: false
+    default: ""
+  inclusion-proofs:
+    description: >-
+      Glob patterns, one per line, for inclusion proof files. Each holds one proof
+      object or an array of them, matched to receipts by leaf hash.
+    required: false
+    default: ""
+  max-age-days:
+    description: >-
+      When set, a receipt's signed issuedAt must be no more than this many days old.
+    required: false
+    default: ""
+  fail-on-invalid:
+    description: >-
+      "true" fails the step when any receipt fails; "false" reports failures as
+      warnings and lets the step pass.
+    required: false
+    default: "true"
+  fail-on-empty:
+    description: '"true" fails the step when the receipts patterns match no file.'
+    required: false
+    default: "true"
+
+outputs:
+  total:
+    description: Number of receipts checked.
+  verified:
+    description: Number of receipts that passed every check.
+  failed:
+    description: Number of failures, counting receipts and unusable tree head or proof files.
+  failures:
+    description: 'JSON array of {"file", "entry", "reason"}, one per failure; entry is the array index or null.'
+
+runs:
+  using: node20
+  main: dist/index.js

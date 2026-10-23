@@ -1,0 +1,90 @@
+# Runs the action from this checkout (uses: ./) on the files in selftest/
+# and checks its outputs: valid receipts pass with inclusion confirmed,
+# forged and tampered receipts fail, and a receipt with no inclusion proof
+# fails.
+name: self-test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Valid receipts, in the log
+        id: valid
+        uses: ./
+        with:
+          receipts: selftest/receipts/valid/*.json
+          public-keys-file: selftest/keys/issuer.pem
+          tree-head: selftest/log/tree-head.json
+          log-public-keys-file: selftest/keys/log.pem
+          inclusion-proofs: selftest/log/proofs/*.json
+
+      - name: Check the valid run
+        env:
+          TOTAL: ${{ steps.valid.outputs.total }}
+          VERIFIED: ${{ steps.valid.outputs.verified }}
+          FAILED: ${{ steps.valid.outputs.failed }}
+        run: |
+          test "$TOTAL" = 2
+          test "$VERIFIED" = 2
+          test "$FAILED" = 0
+
+      - name: Forged and tampered receipts, reported as warnings
+        id: invalid
+        uses: ./
+        with:
+          receipts: selftest/receipts/invalid/*.json
+          public-keys-file: selftest/keys/issuer.pem
+          fail-on-invalid: "false"
+
+      - name: Check the invalid run
+        env:
+          VERIFIED: ${{ steps.invalid.outputs.verified }}
+          FAILED: ${{ steps.invalid.outputs.failed }}
+          FAILURES: ${{ steps.invalid.outputs.failures }}
+        run: |
+          test "$VERIFIED" = 0
+          test "$FAILED" = 4
+          printf '%s' "$FAILURES" | grep -q 'contentHash mismatch'
+          printf '%s' "$FAILURES" | grep -q 'signature does not verify'
+          printf '%s' "$FAILURES" | grep -q 'envelope field \\"overall\\" disagrees'
+          printf '%s' "$FAILURES" | grep -q 'unsupported signature algorithm'
+
+      - name: Forged and tampered receipts fail the step
+        id: strict
+        continue-on-error: true
+        uses: ./
+        with:
+          receipts: selftest/receipts/invalid/*.json
+          public-keys-file: selftest/keys/issuer.pem
+
+      - name: Valid receipts with no inclusion proof
+        id: unproven
+        continue-on-error: true
+        uses: ./
+        with:
+          receipts: selftest/receipts/valid/*.json
+          public-keys-file: selftest/keys/issuer.pem
+          tree-head: selftest/log/tree-head.json
+          log-public-keys-file: selftest/keys/log.pem
+          inclusion-proofs: selftest/log/no-such-dir/*.json
+
+      - name: Check the failing runs
+        env:
+          STRICT: ${{ steps.strict.outcome }}
+          UNPROVEN: ${{ steps.unproven.outcome }}
+          UNPROVEN_FAILED: ${{ steps.unproven.outputs.failed }}
+        run: |
+          test "$STRICT" = failure
+          test "$UNPROVEN" = failure
+          test "$UNPROVEN_FAILED" = 2

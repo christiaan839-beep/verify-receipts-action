@@ -1,0 +1,49 @@
+# Type check, lint, unit tests, the dist/ freshness check, and a run of the
+# bundle in a network namespace with no interfaces up.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: dist/ matches the sources
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --short -- dist
+            echo "::error::dist/ is out of date. Run npm run build and commit dist/."
+            exit 1
+          fi
+      - name: The bundle verifies with no network
+        run: |
+          out="$RUNNER_TEMP/no-network-output"
+          : > "$out"
+          sudo unshare --net -- env \
+            "GITHUB_WORKSPACE=$PWD" "GITHUB_OUTPUT=$out" \
+            "INPUT_RECEIPTS=selftest/receipts/valid/*.json" \
+            "INPUT_PUBLIC-KEYS-FILE=selftest/keys/issuer.pem" \
+            "INPUT_TREE-HEAD=selftest/log/tree-head.json" \
+            "INPUT_LOG-PUBLIC-KEYS-FILE=selftest/keys/log.pem" \
+            "INPUT_INCLUSION-PROOFS=selftest/log/proofs/*.json" \
+            "$(command -v node)" dist/index.js
+          grep -A1 '^verified<<' "$out" | grep -qx 2
