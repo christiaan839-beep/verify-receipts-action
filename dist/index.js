@@ -22517,8 +22517,13 @@ var CLOCK_SKEW_MS = 5 * 60 * 1e3;
 function isObject2(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
+var ARRAY_START = /^[ \t\n\r]*\[/;
+function fileNestsTooDeep(content) {
+  const start = ARRAY_START.exec(content);
+  return textNestsTooDeep(start === null ? content : content.slice(start[0].length));
+}
 function parseJson(content) {
-  if (textNestsTooDeep(content)) return { ok: false, tooDeep: true };
+  if (fileNestsTooDeep(content)) return { ok: false, tooDeep: true };
   try {
     return { ok: true, value: JSON.parse(content) };
   } catch {
@@ -22685,8 +22690,7 @@ function verifyOne(receipt, options, head, proofs) {
 }
 var NOT_RECEIPTS = "file must hold a receipt object or an array of receipt objects";
 function readReceiptFile(content) {
-  const start = /^[ \t\n\r]*\[/.exec(content);
-  if (start === null) {
+  if (!ARRAY_START.test(content)) {
     try {
       return { ok: true, receipt: parseReceipt(content), array: null };
     } catch (err) {
@@ -22694,17 +22698,12 @@ function readReceiptFile(content) {
       return { ok: false, reason: reason === "receipt is not a JSON object" ? NOT_RECEIPTS : reason };
     }
   }
-  if (textNestsTooDeep(content.slice(start[0].length))) {
-    return { ok: false, reason: "receipt nesting deeper than 64" };
-  }
-  let value;
+  if (fileNestsTooDeep(content)) return { ok: false, reason: "receipt nesting deeper than 64" };
   try {
-    value = JSON.parse(content);
+    return { ok: true, array: JSON.parse(content) };
   } catch {
     return { ok: false, reason: "receipt is not valid JSON" };
   }
-  if (!Array.isArray(value)) return { ok: false, reason: "receipt is not valid JSON" };
-  return { ok: true, array: value };
 }
 function verifyReceipts(files, options) {
   const fileErrors = [];

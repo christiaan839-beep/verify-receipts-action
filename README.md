@@ -102,7 +102,9 @@ For each receipt, in this order:
 
 1. The file is JSON and holds a receipt object or a non-empty array of them, and no receipt nests more than 64 arrays and
    objects deep (VAOS 2.0 §7.2). Depth is counted on the file's text before it is parsed, so a duplicate key that
-   `JSON.parse` discards still counts; in an array, each receipt is counted from its own level.
+   `JSON.parse` discards still counts; in an array, each receipt is counted from its own level. One receipt over the
+   limit refuses the whole array file, reported once with `entry: null`, because the count runs before the file is
+   parsed.
 2. `signature` starts with `v2=`. Any other version prefix (`v1=`, `v3=` and so on) fails as an unsupported algorithm.
 3. The checks of the verifiable-receipts v2 verifier: `canonical` and `signature` are present, the base64 is standard,
    `contentHash`, unless absent or null, matches (an empty string does not), the Ed25519 signature verifies over the
@@ -115,7 +117,8 @@ For each receipt, in this order:
 6. If `tree-head` is set: the tree head is well formed and its signature verifies under a pinned log key, a proof exists
    for the receipt's leaf hash, the proof's `treeSize` equals the tree head's, and the proof's audit path leads from the
    leaf to the tree head's `rootHash`. The tree head file and each proof file nest at most 64 deep, counted on their
-   text before they are parsed (transparency-log.md §3.6); a file over the limit is refused and named.
+   text before they are parsed (transparency-log.md §3.6), with each entry of a proof file holding an array counted
+   from its own level, as for receipts; a file over the limit is refused and named.
 
 Time checks read only fields inside the signed `canonical`. A field beside it is unsigned and fails step 3.
 

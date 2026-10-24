@@ -81,13 +81,27 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
+/** The `[` that opens a file holding an array, with any whitespace before it. */
+const ARRAY_START = /^[ \t\n\r]*\[/;
+
 /**
- * Parses a tree head or proof file. Its depth is counted on the text first,
- * with the receipt limit of 64 (transparency-log.md §3.6, VAOS 2.0 §7.2),
- * so a duplicate key that JSON.parse would discard still counts.
+ * Whether a file's text nests deeper than 64 (VAOS 2.0 §7.2), counted on
+ * the text before it is parsed, so a duplicate key that JSON.parse would
+ * discard still counts. In a file holding an array, each entry is counted
+ * from its own level, as it would be in a file on its own: the count
+ * starts after the opening `[`.
+ */
+function fileNestsTooDeep(content: string): boolean {
+  const start = ARRAY_START.exec(content);
+  return textNestsTooDeep(start === null ? content : content.slice(start[0].length));
+}
+
+/**
+ * Parses a tree head or proof file, after counting its depth with the
+ * receipt limit of 64 (transparency-log.md §3.6).
  */
 function parseJson(content: string): { ok: true; value: unknown } | { ok: false; tooDeep: boolean } {
-  if (textNestsTooDeep(content)) return { ok: false, tooDeep: true };
+  if (fileNestsTooDeep(content)) return { ok: false, tooDeep: true };
   try {
     return { ok: true, value: JSON.parse(content) as unknown };
   } catch {
@@ -316,8 +330,7 @@ type ReceiptFile =
  * entry is held to the limit from its own level, as a receipt on its own.
  */
 function readReceiptFile(content: string): ReceiptFile {
-  const start = /^[ \t\n\r]*\[/.exec(content);
-  if (start === null) {
+  if (!ARRAY_START.test(content)) {
     try {
       return { ok: true, receipt: parseReceipt(content), array: null };
     } catch (err) {
@@ -325,17 +338,13 @@ function readReceiptFile(content: string): ReceiptFile {
       return { ok: false, reason: reason === "receipt is not a JSON object" ? NOT_RECEIPTS : reason };
     }
   }
-  if (textNestsTooDeep(content.slice(start[0].length))) {
-    return { ok: false, reason: "receipt nesting deeper than 64" };
-  }
-  let value: unknown;
+  if (fileNestsTooDeep(content)) return { ok: false, reason: "receipt nesting deeper than 64" };
   try {
-    value = JSON.parse(content);
+    // Text that opens with `[` and parses is an array.
+    return { ok: true, array: JSON.parse(content) as unknown[] };
   } catch {
     return { ok: false, reason: "receipt is not valid JSON" };
   }
-  if (!Array.isArray(value)) return { ok: false, reason: "receipt is not valid JSON" };
-  return { ok: true, array: value };
 }
 
 /** Verifies every receipt in `files` and returns one result per receipt. */

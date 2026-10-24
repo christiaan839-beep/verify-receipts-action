@@ -421,6 +421,27 @@ describe("inclusion in the transparency log", () => {
     }
   });
 
+  it("counts a proof file holding an array from inside the array", () => {
+    const at = { ...log.proofs[0], x: arrays(63) };
+    const over = { ...log.proofs[0], x: arrays(64) };
+    const run = (proofs: unknown[]) =>
+      verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: {
+          treeHead: { file: "sth.json", content: JSON.stringify(log.treeHead) },
+          keys: [logKey.pinned],
+          proofs: [{ file: "p.json", content: ` \n${JSON.stringify(proofs)}` }],
+        },
+      });
+    const fine = run([at]);
+    assert.deepEqual(fine.fileErrors, []);
+    assert.equal(fine.results[0]?.ok, true, fine.results[0]?.reason);
+    assert.deepEqual(run([at, over]).fileErrors, [
+      { file: "p.json", reason: "inclusion proof file nesting deeper than 64" },
+    ]);
+  });
+
   it("accepts tree head and proof files nested 64 deep", () => {
     const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
       keys: [issuer.pinned],

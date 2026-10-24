@@ -9,6 +9,7 @@ import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { KeyError, parsePublicKeys, type PinnedKey } from "../src/keys.ts";
+import { verifyV2Receipt } from "../src/vendor/verifiable-receipts/receipt.ts";
 import { verifyInclusionProof } from "../src/vendor/verifiable-receipts/transparency.ts";
 import { verifyReceipts } from "../src/verify.ts";
 import { conformanceKey, FIXTURES, readFixture } from "./helpers.ts";
@@ -62,6 +63,17 @@ describe("conformance corpus", () => {
       assert.equal(result.ok, fixture.expected.ok, result.reason);
       if (fixture.expected.reasonContains !== undefined) {
         assert.match(result.reason ?? "", new RegExp(fixture.expected.reasonContains, "i"));
+      }
+
+      // The vendored verifier on its own, given the receipt as an object, as
+      // the upstream harness runs it. The action counts depth on the text
+      // first, so only this path reaches the verifier's own depth checks.
+      if (fixture.receipt !== undefined) {
+        const direct = verifyV2Receipt(fixture.receipt, key.key);
+        assert.equal(direct.ok, fixture.expected.ok, direct.reason);
+        if (fixture.expected.reasonContains !== undefined) {
+          assert.match(direct.reason ?? "", new RegExp(fixture.expected.reasonContains, "i"));
+        }
       }
     });
   }
