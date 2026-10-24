@@ -22315,7 +22315,7 @@ function verifyV2Receipt(receipt, publicKey) {
   if (contentHash != null && typeof contentHash !== "string") {
     return { ok: false, reason: "contentHash must be a string" };
   }
-  if (contentHash) {
+  if (contentHash != null) {
     const actual = createHash2("sha256").update(canonicalBytes).digest("hex");
     if (actual !== contentHash.replace(/^sha256:/, "")) {
       return { ok: false, reason: "contentHash mismatch with canonical bytes" };

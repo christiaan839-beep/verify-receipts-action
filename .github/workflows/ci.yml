@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 10
     env:
       # The verifiable-receipts commit src/vendor/ and test/fixtures/ come from.
-      VR_REF: 808fa4c923fbb4e0b8fd064487657cc2ecd0148e
+      VR_REF: fd2390b5cd30fb3c31c41810195ab7ec5ed51702
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

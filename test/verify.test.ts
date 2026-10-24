@@ -55,6 +55,12 @@ describe("valid receipts", () => {
     );
   });
 
+  it("verifies a receipt whose contentHash is null or absent", () => {
+    const { canonical, signature } = signReceipt(sampleBody(), issuer.privateKey);
+    assert.equal(one({ canonical, contentHash: null, signature }).ok, true);
+    assert.equal(one({ canonical, signature }).ok, true);
+  });
+
   it("accepts a receipt signed by any one of several pinned keys", () => {
     const r = one(signReceipt(sampleBody(), issuer.privateKey), { keys: [other.pinned, issuer.pinned] });
     assert.equal(r.ok, true, r.reason);
@@ -69,6 +75,13 @@ describe("tampered receipts", () => {
     const r = one(forged);
     assert.equal(r.ok, false);
     assert.match(r.reason ?? "", /signature does not verify/);
+  });
+
+  it("rejects an empty contentHash on a correctly signed receipt", () => {
+    const signed = signReceipt(sampleBody(), issuer.privateKey);
+    const r = one({ ...signed, contentHash: "" });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /contentHash mismatch/);
   });
 
   it("rejects a canonical edited without updating contentHash", () => {

@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/conformance/verify-v2.mjs at commit
-// 808fa4c923fbb4e0b8fd064487657cc2ecd0148e. Licence:
+// fd2390b5cd30fb3c31c41810195ab7ec5ed51702. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: converted to TypeScript with explicit types,
@@ -16,9 +16,9 @@
  *
  *   1. `canonical` and `signature` are non-empty strings.
  *   2. `signature` is "v2=<base64>" with standard base64.
- *   3. `contentHash`, when present and not null, is a string; when
- *      non-empty, it equals the hex SHA-256 of `canonical`'s UTF-8
- *      bytes ("sha256:" prefix optional).
+ *   3. `contentHash`, when present and not null, is a string equal to
+ *      the hex SHA-256 of `canonical`'s UTF-8 bytes ("sha256:" prefix
+ *      optional); an empty string is a mismatch, not an absent field.
  *   4. The Ed25519 signature verifies over `canonical`'s UTF-8 bytes,
  *      exactly as given.
  *   5. `canonical` parses as a JSON object.
@@ -95,7 +95,7 @@ export function verifyV2Receipt(receipt: unknown, publicKey: KeyObject): VerifyR
   if (contentHash != null && typeof contentHash !== "string") {
     return { ok: false, reason: "contentHash must be a string" };
   }
-  if (contentHash) {
+  if (contentHash != null) {
     const actual = createHash("sha256").update(canonicalBytes).digest("hex");
     if (actual !== contentHash.replace(/^sha256:/, "")) {
       return { ok: false, reason: "contentHash mismatch with canonical bytes" };

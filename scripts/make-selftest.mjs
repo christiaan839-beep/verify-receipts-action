@@ -38,6 +38,7 @@ const invalid = [
   "v2-invalid-wrong-key.json",
   "v2-invalid-envelope-disagrees.json",
   "v2-invalid-wrong-version.json",
+  "v2-invalid-empty-contenthash.json",
 ];
 for (const name of valid) write(`receipts/valid/${name}`, receipt(name));
 for (const name of invalid) write(`receipts/invalid/${name}`, receipt(name));
