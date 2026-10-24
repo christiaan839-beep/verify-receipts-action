@@ -155,7 +155,7 @@ Time checks read only fields inside the signed `canonical`. A field beside it is
 
 ## Where the verification code comes from
 
-The `@sovereign-matrix/verifiable-receipts` package is not published on npm, so the action vendors the verification code
+The `@sovereignos/verifiable-receipts` package is not published on npm, so the action vendors the verification code
 it needs in `src/vendor/verifiable-receipts/`:
 
 - `receipt.ts` is `packages/verifiable-receipts/conformance/verify-v2.mjs`, converted to TypeScript with its checks,
