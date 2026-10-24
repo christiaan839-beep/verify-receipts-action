@@ -63,12 +63,15 @@ jobs:
           FAILURES: ${{ steps.invalid.outputs.failures }}
         run: |
           test "$VERIFIED" = 0
-          test "$FAILED" = 5
+          test "$FAILED" = 7
           printf '%s' "$FAILURES" | grep -q 'contentHash mismatch'
           printf '%s' "$FAILURES" | grep -q 'v2-invalid-empty-contenthash.json'
           printf '%s' "$FAILURES" | grep -q 'signature does not verify'
           printf '%s' "$FAILURES" | grep -q 'envelope field \\"overall\\" disagrees'
           printf '%s' "$FAILURES" | grep -q 'unsupported signature algorithm'
+          printf '%s' "$FAILURES" | grep -q 'v2-invalid-deep-nesting.json'
+          printf '%s' "$FAILURES" | grep -q 'v2-invalid-duplicate-deep-key.json'
+          test "$(printf '%s' "$FAILURES" | grep -o 'receipt nesting deeper than 64' | wc -l)" -eq 2
 
       - name: Forged and tampered receipts fail the step
         id: strict

@@ -22218,7 +22218,170 @@ function create(patterns, options) {
 }
 
 // src/keys.ts
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash as createHash2, createPublicKey } from "node:crypto";
+
+// src/vendor/verifiable-receipts/receipt.ts
+import { createHash, verify as nodeVerify } from "node:crypto";
+var ENVELOPE_ONLY = /* @__PURE__ */ new Set(["canonical", "contentHash", "signature"]);
+var STANDARD_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+var SIGNATURE_MISMATCH_REASON = "signature does not verify under the supplied public key";
+function isObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+var SMALL_ORDER_KEYS = /* @__PURE__ */ new Set([
+  "0000000000000000000000000000000000000000000000000000000000000000",
+  "0100000000000000000000000000000000000000000000000000000000000000",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+  "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+  "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+  "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+  "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+]);
+function ed25519KeyProblem(publicKey) {
+  let x;
+  try {
+    x = publicKey.export({ format: "jwk" }).x;
+  } catch {
+    return null;
+  }
+  if (typeof x !== "string") return null;
+  const cleared = Buffer.from(x, "base64url");
+  if (cleared.length !== 32) return null;
+  cleared[31] = (cleared[31] ?? 0) & 127;
+  if (SMALL_ORDER_KEYS.has(cleared.toString("hex"))) return "public key is a small-order point";
+  const y = BigInt("0x" + Buffer.from(cleared).reverse().toString("hex"));
+  if (y >= 2n ** 255n - 19n) return "public key is not a canonical encoding";
+  return null;
+}
+var MAX_NESTING = 64;
+function nestsTooDeep(value) {
+  const stack = [[value, 1]];
+  for (let top = stack.pop(); top !== void 0; top = stack.pop()) {
+    const [v, level] = top;
+    if (v === null || typeof v !== "object") continue;
+    if (level > MAX_NESTING) return true;
+    for (const child of Array.isArray(v) ? v : Object.values(v)) {
+      if (child !== null && typeof child === "object") stack.push([child, level + 1]);
+    }
+  }
+  return false;
+}
+function textNestsTooDeep(text) {
+  let open2 = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === "\\") i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+    } else if (c === "[" || c === "{") {
+      if (++open2 > MAX_NESTING) return true;
+    } else if ((c === "]" || c === "}") && open2 > 0) {
+      open2--;
+    }
+  }
+  return false;
+}
+function jsonEqual(a, b, depth = 1) {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return depth <= MAX_NESTING && Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => jsonEqual(x, b[i], depth + 1));
+  }
+  if (isObject(a) || isObject(b)) {
+    if (depth > MAX_NESTING || !isObject(a) || !isObject(b)) return false;
+    const ka = Object.keys(a);
+    if (ka.length !== Object.keys(b).length) return false;
+    return ka.every((k) => Object.hasOwn(b, k) && jsonEqual(a[k], b[k], depth + 1));
+  }
+  if (typeof a === "number" && typeof b === "number") {
+    return Math.abs(a) < 2 ** 53 && Math.abs(b) < 2 ** 53 && a === b;
+  }
+  return a === b;
+}
+function parseReceipt(text) {
+  if (textNestsTooDeep(text)) throw new Error("receipt nesting deeper than 64");
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("receipt is not valid JSON");
+  }
+  if (!isObject(value)) throw new Error("receipt is not a JSON object");
+  return value;
+}
+function verifyV2Receipt(receipt, publicKey) {
+  if (!isObject(receipt)) return { ok: false, reason: "receipt must be an object" };
+  if (nestsTooDeep(receipt)) return { ok: false, reason: "receipt nesting deeper than 64" };
+  const { canonical, signature, contentHash } = receipt;
+  if (typeof canonical !== "string" || canonical === "") {
+    return { ok: false, reason: "missing canonical projection" };
+  }
+  if (typeof signature !== "string" || signature === "") {
+    return { ok: false, reason: "missing signature" };
+  }
+  if (!signature.startsWith("v2=")) {
+    return { ok: false, reason: "signature is not v2 (expected 'v2=<base64>')" };
+  }
+  if (!STANDARD_BASE64.test(signature.slice(3))) {
+    return { ok: false, reason: "signature base64 invalid" };
+  }
+  const sigBytes = Buffer.from(signature.slice(3), "base64");
+  if (sigBytes.toString("base64") !== signature.slice(3)) {
+    return { ok: false, reason: "signature base64 invalid: not canonical" };
+  }
+  const keyProblem = ed25519KeyProblem(publicKey);
+  if (keyProblem !== null) return { ok: false, reason: keyProblem };
+  const canonicalBytes = Buffer.from(canonical, "utf8");
+  if (contentHash != null && typeof contentHash !== "string") {
+    return { ok: false, reason: "contentHash must be a string" };
+  }
+  if (contentHash != null) {
+    const actual = createHash("sha256").update(canonicalBytes).digest("hex");
+    if (actual !== contentHash.replace(/^sha256:/, "")) {
+      return { ok: false, reason: "contentHash mismatch with canonical bytes" };
+    }
+  }
+  let verified;
+  try {
+    verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);
+  } catch {
+    verified = false;
+  }
+  if (!verified) {
+    return { ok: false, reason: SIGNATURE_MISMATCH_REASON };
+  }
+  if (textNestsTooDeep(canonical)) {
+    return { ok: false, reason: "canonical nesting deeper than 64" };
+  }
+  let signed;
+  try {
+    signed = JSON.parse(canonical);
+  } catch {
+    return { ok: false, reason: "canonical is not valid JSON" };
+  }
+  if (!isObject(signed)) {
+    return { ok: false, reason: "canonical is not a JSON object" };
+  }
+  for (const key of Object.keys(receipt).sort()) {
+    if (ENVELOPE_ONLY.has(key)) continue;
+    if (!Object.hasOwn(signed, key)) {
+      return {
+        ok: false,
+        reason: `envelope field "${key}" is not in the signed canonical`
+      };
+    }
+    if (!jsonEqual(receipt[key], signed[key])) {
+      return {
+        ok: false,
+        reason: `envelope field "${key}" disagrees with the signed canonical`
+      };
+    }
+  }
+  return { ok: true };
+}
+
+// src/keys.ts
 var KeyError = class extends Error {
 };
 var PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g;
@@ -22247,6 +22410,10 @@ function parsePublicKeys(text, source) {
         `${source}: block ${blocks} is a ${key.asymmetricKeyType ?? "unknown"} key, expected ed25519`
       );
     }
+    const problem = ed25519KeyProblem(key);
+    if (problem !== null) {
+      throw new KeyError(`${source}: block ${blocks} is refused: ${problem}; a receipt signed under it proves nothing`);
+    }
     keys.push({ key, fingerprint: fingerprint(key) });
   }
   if (blocks === 0 && text.trim() !== "") {
@@ -22258,7 +22425,7 @@ function parsePublicKeys(text, source) {
 }
 function fingerprint(key) {
   const der = key.export({ type: "spki", format: "der" });
-  return "sha256:" + createHash("sha256").update(der).digest("hex").slice(0, 16);
+  return "sha256:" + createHash2("sha256").update(der).digest("hex").slice(0, 16);
 }
 function dedupeKeys(keys) {
   const seen = /* @__PURE__ */ new Set();
@@ -22267,94 +22434,6 @@ function dedupeKeys(keys) {
     seen.add(k.fingerprint);
     return true;
   });
-}
-
-// src/vendor/verifiable-receipts/receipt.ts
-import { createHash as createHash2, verify as nodeVerify } from "node:crypto";
-var ENVELOPE_ONLY = /* @__PURE__ */ new Set(["canonical", "contentHash", "signature"]);
-var STANDARD_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-var SIGNATURE_MISMATCH_REASON = "signature does not verify under the supplied public key";
-function isObject(v) {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-function jsonEqual(a, b) {
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => jsonEqual(x, b[i]));
-  }
-  if (isObject(a) || isObject(b)) {
-    if (!isObject(a) || !isObject(b)) return false;
-    const ka = Object.keys(a);
-    if (ka.length !== Object.keys(b).length) return false;
-    return ka.every((k) => Object.hasOwn(b, k) && jsonEqual(a[k], b[k]));
-  }
-  if (typeof a === "number" && typeof b === "number") {
-    return Math.abs(a) < 2 ** 53 && Math.abs(b) < 2 ** 53 && a === b;
-  }
-  return a === b;
-}
-function verifyV2Receipt(receipt, publicKey) {
-  if (!isObject(receipt)) return { ok: false, reason: "receipt must be an object" };
-  const { canonical, signature, contentHash } = receipt;
-  if (typeof canonical !== "string" || canonical === "") {
-    return { ok: false, reason: "missing canonical projection" };
-  }
-  if (typeof signature !== "string" || signature === "") {
-    return { ok: false, reason: "missing signature" };
-  }
-  if (!signature.startsWith("v2=")) {
-    return { ok: false, reason: "signature is not v2 (expected 'v2=<base64>')" };
-  }
-  if (!STANDARD_BASE64.test(signature.slice(3))) {
-    return { ok: false, reason: "signature base64 invalid" };
-  }
-  const sigBytes = Buffer.from(signature.slice(3), "base64");
-  if (sigBytes.toString("base64") !== signature.slice(3)) {
-    return { ok: false, reason: "signature base64 invalid: not canonical" };
-  }
-  const canonicalBytes = Buffer.from(canonical, "utf8");
-  if (contentHash != null && typeof contentHash !== "string") {
-    return { ok: false, reason: "contentHash must be a string" };
-  }
-  if (contentHash != null) {
-    const actual = createHash2("sha256").update(canonicalBytes).digest("hex");
-    if (actual !== contentHash.replace(/^sha256:/, "")) {
-      return { ok: false, reason: "contentHash mismatch with canonical bytes" };
-    }
-  }
-  let verified;
-  try {
-    verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);
-  } catch {
-    verified = false;
-  }
-  if (!verified) {
-    return { ok: false, reason: SIGNATURE_MISMATCH_REASON };
-  }
-  let signed;
-  try {
-    signed = JSON.parse(canonical);
-  } catch {
-    return { ok: false, reason: "canonical is not valid JSON" };
-  }
-  if (!isObject(signed)) {
-    return { ok: false, reason: "canonical is not a JSON object" };
-  }
-  for (const key of Object.keys(receipt).sort()) {
-    if (ENVELOPE_ONLY.has(key)) continue;
-    if (!Object.hasOwn(signed, key)) {
-      return {
-        ok: false,
-        reason: `envelope field "${key}" is not in the signed canonical`
-      };
-    }
-    if (!jsonEqual(receipt[key], signed[key])) {
-      return {
-        ok: false,
-        reason: `envelope field "${key}" disagrees with the signed canonical`
-      };
-    }
-  }
-  return { ok: true };
 }
 
 // src/vendor/verifiable-receipts/transparency.ts
@@ -22438,11 +22517,17 @@ var CLOCK_SKEW_MS = 5 * 60 * 1e3;
 function isObject2(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
+var ARRAY_START = /^[ \t\n\r]*\[/;
+function fileNestsTooDeep(content) {
+  const start = ARRAY_START.exec(content);
+  return textNestsTooDeep(start === null ? content : content.slice(start[0].length));
+}
 function parseJson(content) {
+  if (fileNestsTooDeep(content)) return { ok: false, tooDeep: true };
   try {
     return { ok: true, value: JSON.parse(content) };
   } catch {
-    return { ok: false };
+    return { ok: false, tooDeep: false };
   }
 }
 function parseTime(v) {
@@ -22513,7 +22598,8 @@ function readProofs(files, errors) {
   for (const f of files) {
     const parsed = parseJson(f.content);
     if (!parsed.ok) {
-      errors.push({ file: f.file, reason: "inclusion proof file is not valid JSON" });
+      const problem = parsed.tooDeep ? "nesting deeper than 64" : "is not valid JSON";
+      errors.push({ file: f.file, reason: `inclusion proof file ${problem}` });
       continue;
     }
     const entries = Array.isArray(parsed.value) ? parsed.value : [parsed.value];
@@ -22533,7 +22619,7 @@ function readProofs(files, errors) {
 }
 function readTreeHead(log) {
   const parsed = parseJson(log.treeHead.content);
-  if (!parsed.ok) return "tree head is not valid JSON";
+  if (!parsed.ok) return parsed.tooDeep ? "tree head nesting deeper than 64" : "tree head is not valid JSON";
   const sth = parsed.value;
   if (!isObject2(sth)) return "tree head must be a JSON object";
   if (sth.v !== 1) return "tree head v must be 1";
@@ -22602,6 +22688,23 @@ function verifyOne(receipt, options, head, proofs) {
   if (!inc.ok) return { ok: false, reason: inc.reason, key };
   return { ok: true, key, leafIndex: inc.leafIndex };
 }
+var NOT_RECEIPTS = "file must hold a receipt object or an array of receipt objects";
+function readReceiptFile(content) {
+  if (!ARRAY_START.test(content)) {
+    try {
+      return { ok: true, receipt: parseReceipt(content), array: null };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: reason === "receipt is not a JSON object" ? NOT_RECEIPTS : reason };
+    }
+  }
+  if (fileNestsTooDeep(content)) return { ok: false, reason: "receipt nesting deeper than 64" };
+  try {
+    return { ok: true, array: JSON.parse(content) };
+  } catch {
+    return { ok: false, reason: "receipt is not valid JSON" };
+  }
+}
 function verifyReceipts(files, options) {
   const fileErrors = [];
   let head;
@@ -22613,28 +22716,16 @@ function verifyReceipts(files, options) {
   }
   const results = [];
   for (const f of files) {
-    const parsed = parseJson(f.content);
-    if (!parsed.ok) {
-      results.push({ file: f.file, index: null, ok: false, reason: "file is not valid JSON" });
-      continue;
-    }
-    const value = parsed.value;
-    if (Array.isArray(value)) {
-      if (value.length === 0) {
-        results.push({ file: f.file, index: null, ok: false, reason: "file holds an empty array; expected receipts" });
-        continue;
-      }
-      value.forEach((receipt, i) => {
-        results.push({ file: f.file, index: i, ...verifyOne(receipt, options, head, proofs) });
-      });
-    } else if (isObject2(value)) {
-      results.push({ file: f.file, index: null, ...verifyOne(value, options, head, proofs) });
+    const read = readReceiptFile(f.content);
+    if (!read.ok) {
+      results.push({ file: f.file, index: null, ok: false, reason: read.reason });
+    } else if (read.array === null) {
+      results.push({ file: f.file, index: null, ...verifyOne(read.receipt, options, head, proofs) });
+    } else if (read.array.length === 0) {
+      results.push({ file: f.file, index: null, ok: false, reason: "file holds an empty array; expected receipts" });
     } else {
-      results.push({
-        file: f.file,
-        index: null,
-        ok: false,
-        reason: "file must hold a receipt object or an array of receipt objects"
+      read.array.forEach((receipt, i) => {
+        results.push({ file: f.file, index: i, ...verifyOne(receipt, options, head, proofs) });
       });
     }
   }

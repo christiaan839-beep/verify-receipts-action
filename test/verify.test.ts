@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 
 import { verifyReceipts, type ReceiptResult, type VerifyOptions } from "../src/verify.ts";
-import { buildLog, makeKey, rfcLeafHash, sampleBody, signReceipt, signTreeHead, type SignedReceipt } from "./helpers.ts";
+import { arrays, buildLog, makeKey, rfcLeafHash, sampleBody, signReceipt, signTreeHead, type SignedReceipt } from "./helpers.ts";
 
 const NOW = new Date("2026-10-23T12:00:00Z");
 const issuer = makeKey();
@@ -380,6 +380,82 @@ describe("inclusion in the transparency log", () => {
     assert.equal(report.results[0]?.ok, false);
   });
 
+  it("refuses a tree head file nested 65 deep, counted on its text", () => {
+    const deep = JSON.stringify(arrays(64));
+    for (const content of [
+      JSON.stringify({ ...log.treeHead, x: arrays(64) }),
+      `${JSON.stringify(log.treeHead).slice(0, -1)},"logId":${deep},"logId":${JSON.stringify(log.treeHead.logId)}}`,
+    ]) {
+      const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: { treeHead: { file: "sth.json", content }, keys: [logKey.pinned], proofs: [] },
+      });
+      assert.deepEqual(report.fileErrors, [{ file: "sth.json", reason: "tree head nesting deeper than 64" }]);
+      assert.equal(report.treeHead, undefined);
+      assert.equal(report.results[0]?.ok, false);
+    }
+  });
+
+  it("refuses an inclusion proof file nested 65 deep, counted on its text", () => {
+    const deep = JSON.stringify(arrays(64));
+    const proof = log.proofs[0] ?? {};
+    for (const content of [
+      JSON.stringify({ ...proof, x: arrays(64) }),
+      `${JSON.stringify(proof).slice(0, -1)},"auditPath":${deep},"auditPath":${JSON.stringify(proof.auditPath)}}`,
+    ]) {
+      const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: {
+          treeHead: { file: "sth.json", content: JSON.stringify(log.treeHead) },
+          keys: [logKey.pinned],
+          proofs: [{ file: "p.json", content }],
+        },
+      });
+      assert.deepEqual(report.fileErrors, [{ file: "p.json", reason: "inclusion proof file nesting deeper than 64" }]);
+      const [r] = report.results;
+      assert.ok(r);
+      assert.equal(r.ok, false);
+      assert.match(r.reason ?? "", /no inclusion proof/);
+    }
+  });
+
+  it("counts a proof file holding an array from inside the array", () => {
+    const at = { ...log.proofs[0], x: arrays(63) };
+    const over = { ...log.proofs[0], x: arrays(64) };
+    const run = (proofs: unknown[]) =>
+      verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: {
+          treeHead: { file: "sth.json", content: JSON.stringify(log.treeHead) },
+          keys: [logKey.pinned],
+          proofs: [{ file: "p.json", content: ` \n${JSON.stringify(proofs)}` }],
+        },
+      });
+    const fine = run([at]);
+    assert.deepEqual(fine.fileErrors, []);
+    assert.equal(fine.results[0]?.ok, true, fine.results[0]?.reason);
+    assert.deepEqual(run([at, over]).fileErrors, [
+      { file: "p.json", reason: "inclusion proof file nesting deeper than 64" },
+    ]);
+  });
+
+  it("accepts tree head and proof files nested 64 deep", () => {
+    const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+      keys: [issuer.pinned],
+      now: NOW,
+      log: {
+        treeHead: { file: "sth.json", content: JSON.stringify({ ...log.treeHead, x: arrays(63) }) },
+        keys: [logKey.pinned],
+        proofs: [{ file: "p.json", content: JSON.stringify({ ...log.proofs[0], x: arrays(63) }) }],
+      },
+    });
+    assert.deepEqual(report.fileErrors, []);
+    assert.equal(report.results[0]?.ok, true, report.results[0]?.reason);
+  });
+
   it("reports malformed proof entries and ignores them", () => {
     const proofs = [{ leafHashHex: "xyz", leafIndex: 0, treeSize: 7, auditPath: [] }, log.proofs[1]];
     const report = withLog([a, b], log.treeHead, proofs);
@@ -407,5 +483,59 @@ describe("inclusion in the transparency log", () => {
     const [r] = withLog([{ ...a, overall: "fail" }]).results;
     assert.equal(r?.ok, false);
     assert.match(r.reason ?? "", /envelope field/);
+  });
+});
+
+describe("nesting depth", () => {
+  it("reports a receipt file that is not JSON as \"receipt is not valid JSON\"", () => {
+    assert.equal(one("{ receipt").reason, "receipt is not valid JSON");
+    assert.equal(one("[1,").reason, "receipt is not valid JSON");
+  });
+
+  it("verifies a receipt that nests exactly 64 deep", () => {
+    const r = one(signReceipt(sampleBody({ deep: arrays(63) }), issuer.privateKey));
+    assert.equal(r.ok, true, r.reason);
+  });
+
+  it("refuses a signed receipt that nests 65 deep", () => {
+    const r = one(signReceipt(sampleBody({ deep: arrays(64) }), issuer.privateKey));
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /receipt nesting deeper than 64/);
+  });
+
+  it("refuses a signed canonical that nests 65 deep, counted on its text", () => {
+    const { canonical, contentHash, signature } = signReceipt(sampleBody({ deep: arrays(64) }), issuer.privateKey);
+    const r = one({ canonical, contentHash, signature });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /canonical nesting deeper than 64/);
+  });
+
+  it("refuses a receipt file whose duplicate key hides nesting 65 deep", () => {
+    const text = JSON.stringify(signReceipt(sampleBody(), issuer.privateKey));
+    const deep = JSON.stringify(arrays(64));
+    const content = `${text.slice(0, -1)},"overall":${deep},"overall":"pass"}`;
+    assert.equal((JSON.parse(content) as { overall: unknown }).overall, "pass");
+    const r = one(content);
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /receipt nesting deeper than 64/);
+  });
+
+  it("counts an array file's entries from their own level", () => {
+    const at = signReceipt(sampleBody({ deep: arrays(63) }), issuer.privateKey);
+    const fine = verifyReceipts([{ file: "a.json", content: JSON.stringify([at, at]) }], { keys: [issuer.pinned], now: NOW });
+    assert.deepEqual(fine.results.map((r) => r.ok), [true, true]);
+
+    const over = signReceipt(sampleBody({ deep: arrays(64) }), issuer.privateKey);
+    const report = verifyReceipts([{ file: "a.json", content: JSON.stringify([at, over]) }], { keys: [issuer.pinned], now: NOW });
+    assert.equal(report.results.some((r) => r.ok), false);
+    assert.match(report.results[0]?.reason ?? "", /receipt nesting deeper than 64/);
+  });
+
+  it("refuses an array file whose duplicate key hides nesting 65 deep", () => {
+    const text = JSON.stringify(signReceipt(sampleBody(), issuer.privateKey));
+    const content = `[${text.slice(0, -1)},"overall":${JSON.stringify(arrays(64))},"overall":"pass"}]`;
+    const report = verifyReceipts([{ file: "a.json", content }], { keys: [issuer.pinned], now: NOW });
+    assert.equal(report.results.some((r) => r.ok), false);
+    assert.match(report.results[0]?.reason ?? "", /receipt nesting deeper than 64/);
   });
 });

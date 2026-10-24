@@ -68,6 +68,23 @@ export function signReceipt(body: Record<string, unknown>, privateKey: KeyObject
   };
 }
 
+/** `n` arrays, each holding the next: arrays(1) is [], arrays(2) is [[]]. */
+export function arrays(n: number): unknown[] {
+  let v: unknown[] = [];
+  for (let i = 1; i < n; i++) v = [v];
+  return v;
+}
+
+/** An Ed25519 SPKI PEM for a raw 32-byte public key given in hex, weak or not. */
+export function rawKeyPem(hex: string): string {
+  const der = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(hex, "hex")]);
+  return `-----BEGIN PUBLIC KEY-----\n${der.toString("base64")}\n-----END PUBLIC KEY-----\n`;
+}
+
+/** The identity point: a small-order key under which IDENTITY_SIGNATURE verifies every message. */
+export const IDENTITY_KEY_HEX = "01" + "00".repeat(31);
+export const IDENTITY_SIGNATURE = "v2=" + Buffer.concat([Buffer.from([1]), Buffer.alloc(63)]).toString("base64");
+
 export function sampleBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     receiptId: "rcpt_sample_001",

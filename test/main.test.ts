@@ -17,7 +17,18 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import tls from "node:tls";
 
 import { run } from "../src/main.ts";
-import { buildLog, conformanceKey, makeKey, readFixture, sampleBody, signReceipt } from "./helpers.ts";
+import {
+  arrays,
+  buildLog,
+  conformanceKey,
+  IDENTITY_KEY_HEX,
+  IDENTITY_SIGNATURE,
+  makeKey,
+  rawKeyPem,
+  readFixture,
+  sampleBody,
+  signReceipt,
+} from "./helpers.ts";
 
 const NOW = new Date("2026-10-23T12:00:00Z");
 
@@ -292,5 +303,96 @@ describe("run", () => {
     Reflect.deleteProperty(process.env, "INPUT_TREE-HEAD");
     const noHead = await act({ receipts: "*.json", "public-keys": issuer.pem, "inclusion-proofs": "p/*.json" });
     assert.match(noHead.stdout, /need tree-head/);
+  });
+
+  it("refuses a receipt file whose duplicate key hides nesting deeper than 64", async () => {
+    const issuer = makeKey();
+    const text = JSON.stringify(signReceipt(sampleBody(), issuer.privateKey));
+    write("r.json", `${text.slice(0, -1)},"overall":${JSON.stringify(arrays(64))},"overall":"pass"}`);
+    const r = await act({ receipts: "r.json", "public-keys": issuer.pem });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, "0");
+    assert.match(r.outputs.failures ?? "", /receipt nesting deeper than 64/);
+  });
+
+  // Under the identity point this signature verifies every message.
+  const forged = { ...sampleBody(), canonical: JSON.stringify(sampleBody()), signature: IDENTITY_SIGNATURE };
+  const weakPem = rawKeyPem(IDENTITY_KEY_HEX);
+
+  it("refuses a small-order key in public-keys", async () => {
+    write("r.json", forged);
+    const r = await act({ receipts: "r.json", "public-keys": weakPem });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, undefined);
+    assert.match(r.stdout, /input public-keys: block 1 is refused: public key is a small-order point/);
+  });
+
+  it("refuses a small-order key in public-keys-file", async () => {
+    write("r.json", forged);
+    write("weak.pem", weakPem);
+    const r = await act({ receipts: "r.json", "public-keys-file": "weak.pem" });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, undefined);
+    assert.match(r.stdout, /public-keys-file weak\.pem: block 1 is refused: public key is a small-order point/);
+  });
+
+  it("refuses a small-order key in log-public-keys", async () => {
+    const issuer = makeKey();
+    const receipt = signReceipt(sampleBody(), issuer.privateKey);
+    write("r.json", receipt);
+    write("sth.json", { v: 1, logId: "l", treeSize: 1, rootHash: "0".repeat(64), timestamp: "t", signature: IDENTITY_SIGNATURE });
+    const r = await act({ receipts: "r.json", "public-keys": issuer.pem, "tree-head": "sth.json", "log-public-keys": weakPem });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, undefined);
+    assert.match(r.stdout, /input log-public-keys: block 1 is refused: public key is a small-order point/);
+  });
+
+  async function logRun(sth: string, proof: string): Promise<Captured> {
+    const issuer = makeKey();
+    const logKey = makeKey();
+    const a = signReceipt(sampleBody({ receiptId: "a" }), issuer.privateKey);
+    const log = buildLog([a], logKey.privateKey);
+    write("receipts/a.json", a);
+    write("log/sth.json", sth === "" ? log.treeHead : sth.replace("TREE_HEAD", JSON.stringify(log.treeHead).slice(0, -1)));
+    write("log/proofs/a.json", proof === "" ? (log.proofs[0] ?? {}) : proof.replace("PROOF", JSON.stringify(log.proofs[0]).slice(0, -1)));
+    return act({
+      receipts: "receipts/*.json",
+      "public-keys": issuer.pem,
+      "tree-head": "log/sth.json",
+      "log-public-keys": logKey.pem,
+      "inclusion-proofs": "log/proofs/*.json",
+    });
+  }
+  const deep = JSON.stringify(arrays(64));
+
+  it("refuses a tree head file nested 65 deep and names it", async () => {
+    const r = await logRun(`TREE_HEAD,"x":${deep}}`, "");
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, "0");
+    assert.match(r.stdout, /::error title=Tree head or inclusion proof file unusable,file=log\/sth\.json::tree head nesting deeper than 64/);
+  });
+
+  it("refuses an inclusion proof file nested 65 deep and names it", async () => {
+    const r = await logRun("", `PROOF,"x":${deep}}`);
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, "0");
+    assert.match(
+      r.stdout,
+      /::error title=Tree head or inclusion proof file unusable,file=log\/proofs\/a\.json::inclusion proof file nesting deeper than 64/,
+    );
+  });
+
+  it("still confirms inclusion with normal tree head and proof files", async () => {
+    const r = await logRun("", "");
+    assert.equal(r.exitCode, undefined, r.stdout);
+    assert.equal(r.outputs.verified, "1");
+  });
+
+  it("reports a receipt file that is not JSON as \"receipt is not valid JSON\"", async () => {
+    const issuer = makeKey();
+    write("r.json", "{ receipt");
+    const r = await act({ receipts: "r.json", "public-keys": issuer.pem });
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(JSON.parse(r.outputs.failures ?? ""), [{ file: "r.json", entry: null, reason: "receipt is not valid JSON" }]);
   });
 });

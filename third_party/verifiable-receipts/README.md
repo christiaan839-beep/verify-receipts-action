@@ -1,7 +1,7 @@
 # verifiable-receipts
 
 Source: https://github.com/christiaan839-beep/verifiable-receipts, commit
-fd2390b5cd30fb3c31c41810195ab7ec5ed51702.
+24f5c4780dba7c4f76b159b7f7844e17d0226cd6.
 
 Licence: Apache License 2.0, in `LICENSE` beside this file (copied from
 `packages/verifiable-receipts/LICENSE`).
