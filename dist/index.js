@@ -22518,10 +22518,11 @@ function isObject2(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 function parseJson(content) {
+  if (textNestsTooDeep(content)) return { ok: false, tooDeep: true };
   try {
     return { ok: true, value: JSON.parse(content) };
   } catch {
-    return { ok: false };
+    return { ok: false, tooDeep: false };
   }
 }
 function parseTime(v) {
@@ -22592,7 +22593,8 @@ function readProofs(files, errors) {
   for (const f of files) {
     const parsed = parseJson(f.content);
     if (!parsed.ok) {
-      errors.push({ file: f.file, reason: "inclusion proof file is not valid JSON" });
+      const problem = parsed.tooDeep ? "nesting deeper than 64" : "is not valid JSON";
+      errors.push({ file: f.file, reason: `inclusion proof file ${problem}` });
       continue;
     }
     const entries = Array.isArray(parsed.value) ? parsed.value : [parsed.value];
@@ -22612,7 +22614,7 @@ function readProofs(files, errors) {
 }
 function readTreeHead(log) {
   const parsed = parseJson(log.treeHead.content);
-  if (!parsed.ok) return "tree head is not valid JSON";
+  if (!parsed.ok) return parsed.tooDeep ? "tree head nesting deeper than 64" : "tree head is not valid JSON";
   const sth = parsed.value;
   if (!isObject2(sth)) return "tree head must be a JSON object";
   if (sth.v !== 1) return "tree head v must be 1";
@@ -22695,9 +22697,14 @@ function readReceiptFile(content) {
   if (textNestsTooDeep(content.slice(start[0].length))) {
     return { ok: false, reason: "receipt nesting deeper than 64" };
   }
-  const parsed = parseJson(content);
-  if (!parsed.ok || !Array.isArray(parsed.value)) return { ok: false, reason: "receipt is not valid JSON" };
-  return { ok: true, array: parsed.value };
+  let value;
+  try {
+    value = JSON.parse(content);
+  } catch {
+    return { ok: false, reason: "receipt is not valid JSON" };
+  }
+  if (!Array.isArray(value)) return { ok: false, reason: "receipt is not valid JSON" };
+  return { ok: true, array: value };
 }
 function verifyReceipts(files, options) {
   const fileErrors = [];

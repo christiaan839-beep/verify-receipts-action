@@ -346,4 +346,53 @@ describe("run", () => {
     assert.equal(r.outputs.verified, undefined);
     assert.match(r.stdout, /input log-public-keys: block 1 is refused: public key is a small-order point/);
   });
+
+  async function logRun(sth: string, proof: string): Promise<Captured> {
+    const issuer = makeKey();
+    const logKey = makeKey();
+    const a = signReceipt(sampleBody({ receiptId: "a" }), issuer.privateKey);
+    const log = buildLog([a], logKey.privateKey);
+    write("receipts/a.json", a);
+    write("log/sth.json", sth === "" ? log.treeHead : sth.replace("TREE_HEAD", JSON.stringify(log.treeHead).slice(0, -1)));
+    write("log/proofs/a.json", proof === "" ? (log.proofs[0] ?? {}) : proof.replace("PROOF", JSON.stringify(log.proofs[0]).slice(0, -1)));
+    return act({
+      receipts: "receipts/*.json",
+      "public-keys": issuer.pem,
+      "tree-head": "log/sth.json",
+      "log-public-keys": logKey.pem,
+      "inclusion-proofs": "log/proofs/*.json",
+    });
+  }
+  const deep = JSON.stringify(arrays(64));
+
+  it("refuses a tree head file nested 65 deep and names it", async () => {
+    const r = await logRun(`TREE_HEAD,"x":${deep}}`, "");
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, "0");
+    assert.match(r.stdout, /::error title=Tree head or inclusion proof file unusable,file=log\/sth\.json::tree head nesting deeper than 64/);
+  });
+
+  it("refuses an inclusion proof file nested 65 deep and names it", async () => {
+    const r = await logRun("", `PROOF,"x":${deep}}`);
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.outputs.verified, "0");
+    assert.match(
+      r.stdout,
+      /::error title=Tree head or inclusion proof file unusable,file=log\/proofs\/a\.json::inclusion proof file nesting deeper than 64/,
+    );
+  });
+
+  it("still confirms inclusion with normal tree head and proof files", async () => {
+    const r = await logRun("", "");
+    assert.equal(r.exitCode, undefined, r.stdout);
+    assert.equal(r.outputs.verified, "1");
+  });
+
+  it("reports a receipt file that is not JSON as \"receipt is not valid JSON\"", async () => {
+    const issuer = makeKey();
+    write("r.json", "{ receipt");
+    const r = await act({ receipts: "r.json", "public-keys": issuer.pem });
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(JSON.parse(r.outputs.failures ?? ""), [{ file: "r.json", entry: null, reason: "receipt is not valid JSON" }]);
+  });
 });

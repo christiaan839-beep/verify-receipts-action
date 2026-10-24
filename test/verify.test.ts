@@ -380,6 +380,61 @@ describe("inclusion in the transparency log", () => {
     assert.equal(report.results[0]?.ok, false);
   });
 
+  it("refuses a tree head file nested 65 deep, counted on its text", () => {
+    const deep = JSON.stringify(arrays(64));
+    for (const content of [
+      JSON.stringify({ ...log.treeHead, x: arrays(64) }),
+      `${JSON.stringify(log.treeHead).slice(0, -1)},"logId":${deep},"logId":${JSON.stringify(log.treeHead.logId)}}`,
+    ]) {
+      const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: { treeHead: { file: "sth.json", content }, keys: [logKey.pinned], proofs: [] },
+      });
+      assert.deepEqual(report.fileErrors, [{ file: "sth.json", reason: "tree head nesting deeper than 64" }]);
+      assert.equal(report.treeHead, undefined);
+      assert.equal(report.results[0]?.ok, false);
+    }
+  });
+
+  it("refuses an inclusion proof file nested 65 deep, counted on its text", () => {
+    const deep = JSON.stringify(arrays(64));
+    const proof = log.proofs[0] ?? {};
+    for (const content of [
+      JSON.stringify({ ...proof, x: arrays(64) }),
+      `${JSON.stringify(proof).slice(0, -1)},"auditPath":${deep},"auditPath":${JSON.stringify(proof.auditPath)}}`,
+    ]) {
+      const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+        keys: [issuer.pinned],
+        now: NOW,
+        log: {
+          treeHead: { file: "sth.json", content: JSON.stringify(log.treeHead) },
+          keys: [logKey.pinned],
+          proofs: [{ file: "p.json", content }],
+        },
+      });
+      assert.deepEqual(report.fileErrors, [{ file: "p.json", reason: "inclusion proof file nesting deeper than 64" }]);
+      const [r] = report.results;
+      assert.ok(r);
+      assert.equal(r.ok, false);
+      assert.match(r.reason ?? "", /no inclusion proof/);
+    }
+  });
+
+  it("accepts tree head and proof files nested 64 deep", () => {
+    const report = verifyReceipts([{ file: "r.json", content: JSON.stringify(a) }], {
+      keys: [issuer.pinned],
+      now: NOW,
+      log: {
+        treeHead: { file: "sth.json", content: JSON.stringify({ ...log.treeHead, x: arrays(63) }) },
+        keys: [logKey.pinned],
+        proofs: [{ file: "p.json", content: JSON.stringify({ ...log.proofs[0], x: arrays(63) }) }],
+      },
+    });
+    assert.deepEqual(report.fileErrors, []);
+    assert.equal(report.results[0]?.ok, true, report.results[0]?.reason);
+  });
+
   it("reports malformed proof entries and ignores them", () => {
     const proofs = [{ leafHashHex: "xyz", leafIndex: 0, treeSize: 7, auditPath: [] }, log.proofs[1]];
     const report = withLog([a, b], log.treeHead, proofs);
@@ -411,6 +466,11 @@ describe("inclusion in the transparency log", () => {
 });
 
 describe("nesting depth", () => {
+  it("reports a receipt file that is not JSON as \"receipt is not valid JSON\"", () => {
+    assert.equal(one("{ receipt").reason, "receipt is not valid JSON");
+    assert.equal(one("[1,").reason, "receipt is not valid JSON");
+  });
+
   it("verifies a receipt that nests exactly 64 deep", () => {
     const r = one(signReceipt(sampleBody({ deep: arrays(63) }), issuer.privateKey));
     assert.equal(r.ok, true, r.reason);

@@ -114,7 +114,8 @@ For each receipt, in this order:
    in the future.
 6. If `tree-head` is set: the tree head is well formed and its signature verifies under a pinned log key, a proof exists
    for the receipt's leaf hash, the proof's `treeSize` equals the tree head's, and the proof's audit path leads from the
-   leaf to the tree head's `rootHash`.
+   leaf to the tree head's `rootHash`. The tree head file and each proof file nest at most 64 deep, counted on their
+   text before they are parsed (transparency-log.md §3.6); a file over the limit is refused and named.
 
 Time checks read only fields inside the signed `canonical`. A field beside it is unsigned and fails step 3.
 
