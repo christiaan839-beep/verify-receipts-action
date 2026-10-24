@@ -102,9 +102,9 @@ For each receipt, in this order:
 1. The file is JSON and holds a receipt object or a non-empty array of them.
 2. `signature` starts with `v2=`. Any other version prefix (`v1=`, `v3=` and so on) fails as an unsupported algorithm.
 3. The checks of the verifiable-receipts v2 verifier: `canonical` and `signature` are present, the base64 is standard,
-   `contentHash` matches, the Ed25519 signature verifies over the UTF-8 bytes of `canonical` under one of the pinned keys,
-   `canonical` is a JSON object, and every other top-level field agrees with it. A number of magnitude 2^53 or more in
-   such a field agrees with nothing.
+   `contentHash`, unless absent or null, matches (an empty string does not), the Ed25519 signature verifies over the
+   UTF-8 bytes of `canonical` under one of the pinned keys, `canonical` is a JSON object, and every other top-level
+   field agrees with it. A number of magnitude 2^53 or more in such a field agrees with nothing.
 4. If the signed `canonical` has `expiresAt`, it is an ISO 8601 date-time that has not passed.
 5. If `max-age-days` is set, the signed `issuedAt` is an ISO 8601 date-time no older than that and at most five minutes
    in the future.
@@ -155,7 +155,7 @@ it needs in `src/vendor/verifiable-receipts/`:
 - `transparency.ts` is the verification half of `packages/verifiable-receipts/src/transparency.ts`: `leafHash`,
   `innerHash`, `verifyInclusionProof` and `canonicalizeSth`.
 
-Both come from commit `808fa4c923fbb4e0b8fd064487657cc2ecd0148e` of verifiable-receipts, under the Apache License 2.0.
+Both come from commit `fd2390b5cd30fb3c31c41810195ab7ec5ed51702` of verifiable-receipts, under the Apache License 2.0.
 Each file's header says what changed. The licence is in `third_party/verifiable-receipts/LICENSE`. The conformance
 fixtures in `test/fixtures/conformance/` are copied from the same commit; `test/fixtures/conformance/README.md` says so.
 The `vendor` job in `.github/workflows/ci.yml` checks the copies against that commit, named there as `VR_REF`.

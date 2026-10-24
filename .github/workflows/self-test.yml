@@ -63,8 +63,9 @@ jobs:
           FAILURES: ${{ steps.invalid.outputs.failures }}
         run: |
           test "$VERIFIED" = 0
-          test "$FAILED" = 4
+          test "$FAILED" = 5
           printf '%s' "$FAILURES" | grep -q 'contentHash mismatch'
+          printf '%s' "$FAILURES" | grep -q 'v2-invalid-empty-contenthash.json'
           printf '%s' "$FAILURES" | grep -q 'signature does not verify'
           printf '%s' "$FAILURES" | grep -q 'envelope field \\"overall\\" disagrees'
           printf '%s' "$FAILURES" | grep -q 'unsupported signature algorithm'

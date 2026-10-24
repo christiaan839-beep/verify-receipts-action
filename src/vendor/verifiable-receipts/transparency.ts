@@ -3,13 +3,14 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/src/transparency.ts at commit
-// 808fa4c923fbb4e0b8fd064487657cc2ecd0148e. Licence:
+// fd2390b5cd30fb3c31c41810195ab7ec5ed51702. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: only the verification half is kept
 // (leafHash, innerHash, verifyInclusionProof, canonicalizeSth and the
 // SignedTreeHead type); tree building, proof generation and consistency
-// proofs are left out. leafHash takes a string only. verifyInclusionProof
+// proofs are left out. leafHash takes a string only. isHashHex, which the
+// original imports from src/hash.ts, is defined here. verifyInclusionProof
 // returns false when an audit-path entry is missing, which the original
 // left to the length check alone.
 

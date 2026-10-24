@@ -2,7 +2,7 @@
 
 Copied unchanged from verifiable-receipts
 (https://github.com/christiaan839-beep/verifiable-receipts), commit
-808fa4c923fbb4e0b8fd064487657cc2ecd0148e:
+fd2390b5cd30fb3c31c41810195ab7ec5ed51702:
 `packages/verifiable-receipts/conformance/fixtures/*.json` and
 `packages/verifiable-receipts/conformance/public-key.pem`.
 
