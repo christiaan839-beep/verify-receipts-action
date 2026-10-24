@@ -8,7 +8,9 @@
  */
 import type { PinnedKey } from "./keys.ts";
 import {
+  parseReceipt,
   SIGNATURE_MISMATCH_REASON,
+  textNestsTooDeep,
   verifyV2Receipt,
   type VerifyResult,
 } from "./vendor/verifiable-receipts/receipt.ts";
@@ -291,6 +293,38 @@ function verifyOne(
   return { ok: true, key, leafIndex: inc.leafIndex };
 }
 
+const NOT_RECEIPTS = "file must hold a receipt object or an array of receipt objects";
+
+type ReceiptFile =
+  | { ok: true; receipt: Record<string, unknown>; array: null }
+  | { ok: true; array: unknown[] }
+  | { ok: false; reason: string };
+
+/**
+ * Reads a receipt file's text. A file holding one receipt is read with the
+ * vendored parseReceipt, which counts nesting on the text before it parses,
+ * so a duplicate key that JSON.parse would discard still counts. A file
+ * holding an array is counted the same way from inside the array, so each
+ * entry is held to the limit from its own level, as a receipt on its own.
+ */
+function readReceiptFile(content: string): ReceiptFile {
+  const start = /^[ \t\n\r]*\[/.exec(content);
+  if (start === null) {
+    try {
+      return { ok: true, receipt: parseReceipt(content), array: null };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: reason === "receipt is not a JSON object" ? NOT_RECEIPTS : reason };
+    }
+  }
+  if (textNestsTooDeep(content.slice(start[0].length))) {
+    return { ok: false, reason: "receipt nesting deeper than 64" };
+  }
+  const parsed = parseJson(content);
+  if (!parsed.ok || !Array.isArray(parsed.value)) return { ok: false, reason: "receipt is not valid JSON" };
+  return { ok: true, array: parsed.value };
+}
+
 /** Verifies every receipt in `files` and returns one result per receipt. */
 export function verifyReceipts(files: readonly SourceFile[], options: VerifyOptions): Report {
   const fileErrors: FileError[] = [];
@@ -304,28 +338,16 @@ export function verifyReceipts(files: readonly SourceFile[], options: VerifyOpti
 
   const results: ReceiptResult[] = [];
   for (const f of files) {
-    const parsed = parseJson(f.content);
-    if (!parsed.ok) {
-      results.push({ file: f.file, index: null, ok: false, reason: "file is not valid JSON" });
-      continue;
-    }
-    const value = parsed.value;
-    if (Array.isArray(value)) {
-      if (value.length === 0) {
-        results.push({ file: f.file, index: null, ok: false, reason: "file holds an empty array; expected receipts" });
-        continue;
-      }
-      value.forEach((receipt: unknown, i) => {
-        results.push({ file: f.file, index: i, ...verifyOne(receipt, options, head, proofs) });
-      });
-    } else if (isObject(value)) {
-      results.push({ file: f.file, index: null, ...verifyOne(value, options, head, proofs) });
+    const read = readReceiptFile(f.content);
+    if (!read.ok) {
+      results.push({ file: f.file, index: null, ok: false, reason: read.reason });
+    } else if (read.array === null) {
+      results.push({ file: f.file, index: null, ...verifyOne(read.receipt, options, head, proofs) });
+    } else if (read.array.length === 0) {
+      results.push({ file: f.file, index: null, ok: false, reason: "file holds an empty array; expected receipts" });
     } else {
-      results.push({
-        file: f.file,
-        index: null,
-        ok: false,
-        reason: "file must hold a receipt object or an array of receipt objects",
+      read.array.forEach((receipt: unknown, i) => {
+        results.push({ file: f.file, index: i, ...verifyOne(receipt, options, head, proofs) });
       });
     }
   }

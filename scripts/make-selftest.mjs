@@ -32,6 +32,13 @@ function receipt(name) {
   return JSON.parse(readFileSync(join(fixtures, name), "utf8")).receipt;
 }
 
+// A fixture that gives its receipt as text (receiptText) is written as
+// that text, byte for byte, so the action reads it as the fixture means.
+function receiptFile(name) {
+  const fixture = JSON.parse(readFileSync(join(fixtures, name), "utf8"));
+  return fixture.receiptText ?? fixture.receipt;
+}
+
 const valid = ["v2-valid-001.json", "v2-valid-envelope-agrees.json"];
 const invalid = [
   "v2-invalid-tampered.json",
@@ -39,9 +46,11 @@ const invalid = [
   "v2-invalid-envelope-disagrees.json",
   "v2-invalid-wrong-version.json",
   "v2-invalid-empty-contenthash.json",
+  "v2-invalid-deep-nesting.json",
+  "v2-invalid-duplicate-deep-key.json",
 ];
 for (const name of valid) write(`receipts/valid/${name}`, receipt(name));
-for (const name of invalid) write(`receipts/invalid/${name}`, receipt(name));
+for (const name of invalid) write(`receipts/invalid/${name}`, receiptFile(name));
 write("keys/issuer.pem", readFileSync(join(fixtures, "public-key.pem"), "utf8"));
 
 // Both valid receipts carry the same canonical, so they share one leaf.

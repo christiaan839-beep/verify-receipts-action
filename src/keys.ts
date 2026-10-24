@@ -3,6 +3,8 @@
 
 import { createHash, createPublicKey, type KeyObject } from "node:crypto";
 
+import { ed25519KeyProblem } from "./vendor/verifiable-receipts/receipt.ts";
+
 /** A pinned Ed25519 public key and the short name it is reported under. */
 export interface PinnedKey {
   key: KeyObject;
@@ -16,8 +18,10 @@ const PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g;
 
 /**
  * Reads every PEM block in `text` and returns the Ed25519 public keys.
- * A private key, a non-Ed25519 key, an unreadable block, or text with no
- * PEM block at all is an error: the action never guesses which key was meant.
+ * A private key, a non-Ed25519 key, a weak Ed25519 key (a point of small
+ * order or a non-canonical encoding, VAOS 2.0 §7.3), an unreadable block,
+ * or text with no PEM block at all is an error: the action never guesses
+ * which key was meant.
  * `source` names the input or file in error messages.
  */
 export function parsePublicKeys(text: string, source: string): PinnedKey[] {
@@ -44,6 +48,10 @@ export function parsePublicKeys(text: string, source: string): PinnedKey[] {
       throw new KeyError(
         `${source}: block ${blocks} is a ${key.asymmetricKeyType ?? "unknown"} key, expected ed25519`,
       );
+    }
+    const problem = ed25519KeyProblem(key);
+    if (problem !== null) {
+      throw new KeyError(`${source}: block ${blocks} is refused: ${problem}; a receipt signed under it proves nothing`);
     }
     keys.push({ key, fingerprint: fingerprint(key) });
   }
