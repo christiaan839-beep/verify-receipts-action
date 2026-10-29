@@ -18,8 +18,10 @@ propose updates.
 
 ## A release
 
-1. Bump `version` in `package.json` (and `package-lock.json`), rebuild
-   `dist/` with `npm run build`, and merge the pull request.
+1. Bump `version` in `package.json` (and `package-lock.json`), move the
+   `Unreleased` notes in `CHANGELOG.md` under the new version (the release
+   notes include that section), rebuild `dist/` with `npm run build`, and
+   merge the pull request.
 2. Tag the merge commit, signed, and push the tag:
 
    ```
