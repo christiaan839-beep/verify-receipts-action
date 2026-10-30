@@ -3,14 +3,20 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/conformance/verify-v2.mjs at commit
-// 24f5c4780dba7c4f76b159b7f7844e17d0226cd6. Licence:
+// f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
-// Changed from the original: converted to TypeScript with explicit types;
-// the signature-mismatch reason exported as SIGNATURE_MISMATCH_REASON;
+// Changed from the original: converted to TypeScript with explicit types
+// (verifyEd25519Strict takes its arguments as unknown, since it checks
+// them); the signature-mismatch reason exported as SIGNATURE_MISMATCH_REASON;
 // ed25519KeyProblem exported, so the action can refuse a weak key when it
-// reads its inputs. No change to the checks, their order or their failure
-// reasons.
+// reads its inputs; the edwards25519 arithmetic (P, L and pointProblem)
+// imported from edwards25519.ts, vendored from the library's
+// src/edwards25519.ts at the same commit, instead of written out a second
+// time here. Upstream keeps the two copies apart so its harness does not
+// rest on the code it checks; they use the same constants, the same order
+// of checks and the same reasons. No change to the checks, their order or
+// their failure reasons.
 
 /**
  * The v2 (Ed25519) receipt verifier of the verifiable-receipts conformance
@@ -23,10 +29,12 @@
  *   3. `contentHash`, when present and not null, is a string equal to
  *      the hex SHA-256 of `canonical`'s UTF-8 bytes ("sha256:" prefix
  *      optional); an empty string is a mismatch, not an absent field.
- *   4. The public key is not a point of small order or a non-canonical
- *      encoding (VAOS 2.0 §7.3; checked right after step 2), and the
- *      Ed25519 signature verifies over `canonical`'s UTF-8 bytes,
- *      exactly as given.
+ *   4. The public key is a canonical encoding of a point of order L:
+ *      not of small order, not of mixed order, not off the curve
+ *      (VAOS 2.0 §7.3; checked right after step 2). The signature's R
+ *      is the same, and its S is below L, checked before node:crypto
+ *      sees it; then the Ed25519 signature verifies over `canonical`'s
+ *      UTF-8 bytes, exactly as given.
  *   5. `canonical` nests at most 64 deep, counted on its text before it
  *      is parsed, and parses as a JSON object.
  *   6. Every other top-level field of the receipt equals the same field
@@ -40,7 +48,9 @@
  * jsonEqual below recurses at most 64 deep, and the depth checks walk an
  * explicit stack, so no input can overflow the call stack.
  */
-import { createHash, verify as nodeVerify, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, verify as nodeVerify, type KeyObject } from "node:crypto";
+
+import { L, P, pointProblem } from "./edwards25519.ts";
 
 const ENVELOPE_ONLY = new Set(["canonical", "contentHash", "signature"]);
 
@@ -72,12 +82,42 @@ const SMALL_ORDER_KEYS = new Set([
   "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
 ]);
 
+const keyProblems = new Map<string, string | null>(); // a key's answer never changes; R is not cached
+
+const littleEndian = (bytes: Uint8Array): bigint =>
+  BigInt("0x" + (Buffer.from(bytes).reverse().toString("hex") || "0"));
+
 /**
- * Why the Ed25519 public key is refused (VAOS 2.0 §7.3), or null: a point
- * of small order, or a non-canonical encoding (y of p or more). A key that
- * is not Ed25519 is left to the signature check, which fails.
+ * Why a raw Ed25519 public key is refused (VAOS 2.0 §7.3), or null. In
+ * order: not 32 bytes; on the small-order blocklist (sign bit cleared);
+ * y of p or more; then pointProblem. The reasons of Python and Go.
+ */
+function rawKeyProblem(raw: Uint8Array): string | null {
+  if (raw.length !== 32) return "public key is not 32 bytes";
+  const hex = Buffer.from(raw).toString("hex");
+  const cached = keyProblems.get(hex);
+  if (cached !== undefined) return cached;
+  const cleared = Buffer.from(raw);
+  cleared[31] = (cleared[31] ?? 0) & 0x7f;
+  let problem: string | null;
+  if (SMALL_ORDER_KEYS.has(cleared.toString("hex"))) problem = "public key is a small-order point";
+  else if (littleEndian(cleared) >= P) problem = "public key is not a canonical encoding";
+  else {
+    const p = pointProblem(raw);
+    problem = p === null ? null : `public key is ${p}`;
+  }
+  if (keyProblems.size >= 256) keyProblems.clear();
+  keyProblems.set(hex, problem);
+  return problem;
+}
+
+/**
+ * Why the Ed25519 public key is refused (VAOS 2.0 §7.3), or null. A key
+ * that is not Ed25519, or not 32 bytes, is left to the signature check,
+ * which fails.
  */
 export function ed25519KeyProblem(publicKey: KeyObject): string | null {
+  if (publicKey.asymmetricKeyType !== "ed25519") return null;
   let x: unknown;
   try {
     x = publicKey.export({ format: "jwk" }).x;
@@ -85,13 +125,49 @@ export function ed25519KeyProblem(publicKey: KeyObject): string | null {
     return null;
   }
   if (typeof x !== "string") return null;
-  const cleared = Buffer.from(x, "base64url");
-  if (cleared.length !== 32) return null;
-  cleared[31] = (cleared[31] ?? 0) & 0x7f;
-  if (SMALL_ORDER_KEYS.has(cleared.toString("hex"))) return "public key is a small-order point";
-  const y = BigInt("0x" + Buffer.from(cleared).reverse().toString("hex"));
-  if (y >= 2n ** 255n - 19n) return "public key is not a canonical encoding";
+  const raw = Buffer.from(x, "base64url");
+  return raw.length === 32 ? rawKeyProblem(raw) : null;
+}
+
+/**
+ * Why a signature is rejected before node:crypto sees it (VAOS 2.0 §7.3),
+ * or null: it is 64 bytes, its R a canonical encoding of a point of order
+ * L ("signature R is ..."), its S below L. A wrong length or an S of L or
+ * more has the reason a failed check has.
+ */
+function signatureProblem(sig: Uint8Array): string | null {
+  if (sig.length !== 64) return SIGNATURE_MISMATCH_REASON;
+  const problem = pointProblem(sig.subarray(0, 32));
+  if (problem !== null) return `signature R is ${problem}`;
+  if (littleEndian(sig.subarray(32)) >= L) return SIGNATURE_MISMATCH_REASON;
   return null;
+}
+
+/**
+ * One Ed25519 signature under the strict profile of VAOS 2.0 §7.3: the
+ * key, then R and S, then node:crypto's cofactorless check. `publicKey`,
+ * `message` and `signature` are bytes (the raw key and R || S).
+ */
+export function verifyEd25519Strict(publicKey: unknown, message: unknown, signature: unknown): VerifyResult {
+  if (!(publicKey instanceof Uint8Array) || !(message instanceof Uint8Array) || !(signature instanceof Uint8Array)) {
+    return { ok: false, reason: SIGNATURE_MISMATCH_REASON };
+  }
+  const keyProblem = rawKeyProblem(publicKey);
+  if (keyProblem !== null) return { ok: false, reason: keyProblem };
+  const sig = Buffer.from(signature);
+  const sigProblem = signatureProblem(sig);
+  if (sigProblem !== null) return { ok: false, reason: sigProblem };
+  let ok: boolean;
+  try {
+    const key = createPublicKey({
+      key: { kty: "OKP", crv: "Ed25519", x: Buffer.from(publicKey).toString("base64url") },
+      format: "jwk",
+    });
+    ok = nodeVerify(null, message, key, sig);
+  } catch {
+    ok = false;
+  }
+  return ok ? { ok: true } : { ok: false, reason: SIGNATURE_MISMATCH_REASON };
 }
 
 /** The nesting limit of VAOS 2.0 §7.2. */
@@ -227,6 +303,9 @@ export function verifyV2Receipt(receipt: unknown, publicKey: KeyObject): VerifyR
     }
   }
 
+  // VAOS 2.0 §7.3: R and S are checked before node:crypto sees them.
+  const sigProblem = signatureProblem(sigBytes);
+  if (sigProblem !== null) return { ok: false, reason: sigProblem };
   let verified: boolean;
   try {
     verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);

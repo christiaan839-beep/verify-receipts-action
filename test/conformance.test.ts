@@ -9,7 +9,7 @@ import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { KeyError, parsePublicKeys, type PinnedKey } from "../src/keys.ts";
-import { verifyV2Receipt } from "../src/vendor/verifiable-receipts/receipt.ts";
+import { verifyEd25519Strict, verifyV2Receipt } from "../src/vendor/verifiable-receipts/receipt.ts";
 import { verifyInclusionProof } from "../src/vendor/verifiable-receipts/transparency.ts";
 import { verifyReceipts } from "../src/verify.ts";
 import { conformanceKey, FIXTURES, readFixture } from "./helpers.ts";
@@ -23,11 +23,23 @@ const NOW = new Date("2026-10-23T00:00:00Z");
 const files = readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).sort();
 
 describe("conformance corpus", () => {
-  it("holds the 30 fixtures of the source corpus", () => {
-    assert.equal(files.length, 30);
+  it("holds the 50 fixtures of the source corpus", () => {
+    assert.equal(files.length, 50);
   });
 
-  for (const name of files.filter((f) => f.startsWith("v2-"))) {
+  // The v2 receipt fixtures, and the strict Ed25519 vectors of VAOS 2.0
+  // §7.3 that come as receipts (ed25519-*.json with a receipt): each
+  // through the action's own path, verifyReceipts, under its key.
+  const receiptFixtures = files.filter(
+    (f) => f.startsWith("v2-") || (f.startsWith("ed25519-") && !("ed25519" in (JSON.parse(readFixture(f)) as object))),
+  );
+
+  it("holds 34 receipt fixtures, 17 of them strict Ed25519 vectors", () => {
+    assert.equal(receiptFixtures.length, 34);
+    assert.equal(receiptFixtures.filter((f) => f.startsWith("ed25519-")).length, 17);
+  });
+
+  for (const name of receiptFixtures) {
     it(`receipt ${name}`, () => {
       // A fixture gives the receipt as an object (receipt) or as the text of
       // a receipt file (receiptText), which the action reads as it reads a
@@ -75,6 +87,27 @@ describe("conformance corpus", () => {
           assert.match(direct.reason ?? "", new RegExp(fixture.expected.reasonContains, "i"));
         }
       }
+    });
+  }
+
+  // The strict Ed25519 vectors that come as raw bytes (the RFC 8032
+  // tests): their messages are not receipts, so they cannot go through
+  // verifyReceipts. The key goes through the action's key reader as PEM,
+  // and the signature through the vendored verifyEd25519Strict, the same
+  // key, R and S checks verifyV2Receipt makes.
+  for (const name of files.filter((f) => f.startsWith("ed25519-") && !receiptFixtures.includes(f))) {
+    it(`raw Ed25519 vector ${name}`, () => {
+      const f = JSON.parse(readFixture(name)) as {
+        ed25519: { publicKey: string; message: string; signature: string };
+        expected: Expected;
+      };
+      const raw = Buffer.from(f.ed25519.publicKey, "hex");
+      const pem = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: raw.toString("base64url") }, format: "jwk" })
+        .export({ type: "spki", format: "pem" })
+        .toString();
+      assert.equal(parsePublicKeys(pem, name).length, 1);
+      const result = verifyEd25519Strict(raw, Buffer.from(f.ed25519.message, "hex"), Buffer.from(f.ed25519.signature, "hex"));
+      assert.equal(result.ok, f.expected.ok, result.reason);
     });
   }
 

@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/src/transparency.ts at commit
-// 24f5c4780dba7c4f76b159b7f7844e17d0226cd6. Licence:
+// f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: only the verification half is kept
