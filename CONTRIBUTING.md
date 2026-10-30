@@ -32,7 +32,7 @@ against pinned keys, inside a workflow job.
 npm ci
 npm run typecheck
 npm run lint
-npm test
+npm run coverage   # npm test, failing below the coverage thresholds
 npm run build && git diff --exit-code dist/
 ```
 

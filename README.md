@@ -177,6 +177,7 @@ npm ci
 npm run typecheck   # tsc, strict
 npm run lint        # eslint, typescript-eslint strict type-checked rules
 npm test            # node:test; keys are generated at test time
+npm run coverage    # the tests, with coverage of src/; fails below the thresholds in package.json
 npm run build       # esbuild bundle to dist/index.js and dist/licenses.txt
 ```
 
