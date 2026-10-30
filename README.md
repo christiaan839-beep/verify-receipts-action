@@ -150,8 +150,8 @@ Time checks read only fields inside the signed `canonical`. A field beside it is
 - A top-level field beside `canonical` cannot hold a number of magnitude 2^53 or more: `JSON.parse` rounds such a
   number, so the verifier rejects the field instead of comparing rounded values. Inside `canonical` any number is
   allowed, because the signature covers its bytes.
-- The runtime is `node20`, as declared in `action.yml`. The unit tests need Node 22.18 or later, which runs TypeScript
-  directly.
+- The runtime is `node24`, as declared in `action.yml`; GitHub removed Node 20 from Actions runners on 23 September
+  2026. The unit tests need Node 22.18 or later, which runs TypeScript directly.
 
 ## Where the verification code comes from
 
