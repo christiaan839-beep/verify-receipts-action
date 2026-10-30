@@ -22779,21 +22779,22 @@ async function globFiles(patterns) {
   return [...new Set(found)].sort();
 }
 async function readLimited(path6) {
-  const tooLarge = `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads`;
   try {
     const handle = await open2(path6, constants3.O_RDONLY | constants3.O_NONBLOCK);
     try {
       const info2 = await handle.stat();
       if (!info2.isFile()) return { ok: false, reason: "not a regular file" };
-      if (info2.size > MAX_FILE_BYTES) return { ok: false, reason: tooLarge };
-      const buf = Buffer.alloc(MAX_FILE_BYTES + 1);
+      if (info2.size > MAX_FILE_BYTES) {
+        return { ok: false, reason: `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads` };
+      }
+      const buf = Buffer.alloc(info2.size + 1);
       let length = 0;
       while (length < buf.length) {
         const { bytesRead } = await handle.read(buf, length, buf.length - length, length);
         if (bytesRead === 0) break;
         length += bytesRead;
       }
-      if (length > MAX_FILE_BYTES) return { ok: false, reason: tooLarge };
+      if (length !== info2.size) return { ok: false, reason: "file changed while being read" };
       return { ok: true, content: buf.toString("utf8", 0, length) };
     } finally {
       await handle.close();

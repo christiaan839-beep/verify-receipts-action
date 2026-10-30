@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, promises as fsp, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, promises as fsp, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { syncBuiltinESMExports } from "node:module";
@@ -296,7 +296,37 @@ describe("run", () => {
     assert.equal(r.exitCode, undefined, r.stdout);
   });
 
-  it("reports a named pipe as not a regular file without waiting for a writer", { skip: process.platform === "win32" }, async () => {
+  it("refuses a file that grows after its size is checked, even under the limit", async () => {
+    const issuer = makeKey();
+    write("r.json", signReceipt(sampleBody(), issuer.privateKey));
+    const target = realpathSync(join(dir, "r.json"));
+    // FileHandle.stat is the size check; append to the file right after it
+    // returns, so the read sees more bytes than the check did.
+    const probe = await fsp.open(target, "r");
+    const proto = Object.getPrototypeOf(probe) as { stat: (...args: unknown[]) => Promise<unknown> };
+    await probe.close();
+    const { stat } = proto;
+    let grown = false;
+    proto.stat = async function (this: unknown, ...args: unknown[]): Promise<unknown> {
+      const result = await stat.apply(this, args);
+      if (!grown) {
+        grown = true;
+        appendFileSync(target, "\n".repeat(64));
+      }
+      return result;
+    };
+    let r: Captured;
+    try {
+      r = await act({ receipts: "r.json", "public-keys": issuer.pem });
+    } finally {
+      proto.stat = stat;
+    }
+    assert.ok(grown, "the file handle was never checked");
+    assert.equal(r.exitCode, 1);
+    assert.match(r.outputs.failures ?? "", /file changed while being read/);
+  });
+
+  it("reports a named pipe as not a regular file without waiting for a writer", { skip: process.platform === "win32", timeout: 5000 }, async () => {
     const issuer = makeKey();
     execFileSync("mkfifo", [join(dir, "pipe.json")]);
     const r = await act({ receipts: "pipe.json", "public-keys": issuer.pem });
