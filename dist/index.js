@@ -5785,7 +5785,7 @@ var require_client_h1 = __commonJS({
       kResume,
       kHTTPContext
     } = require_symbols();
-    var constants3 = require_constants2();
+    var constants4 = require_constants2();
     var EMPTY_BUF = Buffer.alloc(0);
     var FastBuffer = Buffer[Symbol.species];
     var addListener = util.addListener;
@@ -5860,7 +5860,7 @@ var require_client_h1 = __commonJS({
       constructor(client, socket, { exports: exports2 }) {
         assert4(Number.isFinite(client[kMaxHeadersSize]) && client[kMaxHeadersSize] > 0);
         this.llhttp = exports2;
-        this.ptr = this.llhttp.llhttp_alloc(constants3.TYPE.RESPONSE);
+        this.ptr = this.llhttp.llhttp_alloc(constants4.TYPE.RESPONSE);
         this.client = client;
         this.socket = socket;
         this.timeout = null;
@@ -5955,11 +5955,11 @@ var require_client_h1 = __commonJS({
             currentBufferRef = null;
           }
           const offset = llhttp.llhttp_get_error_pos(this.ptr) - currentBufferPtr;
-          if (ret !== constants3.ERROR.OK) {
+          if (ret !== constants4.ERROR.OK) {
             const body = data.subarray(offset);
-            if (ret === constants3.ERROR.PAUSED_UPGRADE) {
+            if (ret === constants4.ERROR.PAUSED_UPGRADE) {
               this.onUpgrade(body);
-            } else if (ret === constants3.ERROR.PAUSED) {
+            } else if (ret === constants4.ERROR.PAUSED) {
               this.paused = true;
               socket.unshift(body);
             } else {
@@ -5982,10 +5982,10 @@ var require_client_h1 = __commonJS({
         } finally {
           currentParser = null;
         }
-        if (ret === constants3.ERROR.OK) {
+        if (ret === constants4.ERROR.OK) {
           return null;
         }
-        if (ret === constants3.ERROR.PAUSED || ret === constants3.ERROR.PAUSED_UPGRADE) {
+        if (ret === constants4.ERROR.PAUSED || ret === constants4.ERROR.PAUSED_UPGRADE) {
           this.paused = true;
           return null;
         }
@@ -6002,7 +6002,7 @@ var require_client_h1 = __commonJS({
           const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0);
           message = "Response does not match the HTTP/1.1 protocol (" + Buffer.from(llhttp.memory.buffer, ptr, len).toString() + ")";
         }
-        return new HTTPParserError(message, constants3.ERROR[ret], data);
+        return new HTTPParserError(message, constants4.ERROR[ret], data);
       }
       destroy() {
         assert4(this.ptr != null);
@@ -6182,7 +6182,7 @@ var require_client_h1 = __commonJS({
           socket[kBlocking] = false;
           client[kResume]();
         }
-        return pause ? constants3.ERROR.PAUSED : 0;
+        return pause ? constants4.ERROR.PAUSED : 0;
       }
       onBody(buf) {
         const { client, socket, statusCode, maxResponseSize } = this;
@@ -6204,7 +6204,7 @@ var require_client_h1 = __commonJS({
         }
         this.bytesRead += buf.length;
         if (request.onData(buf) === false) {
-          return constants3.ERROR.PAUSED;
+          return constants4.ERROR.PAUSED;
         }
       }
       onMessageComplete() {
@@ -6240,13 +6240,13 @@ var require_client_h1 = __commonJS({
         if (socket[kWriting]) {
           assert4(client[kRunning] === 0);
           util.destroy(socket, new InformationalError("reset"));
-          return constants3.ERROR.PAUSED;
+          return constants4.ERROR.PAUSED;
         } else if (!shouldKeepAlive) {
           util.destroy(socket, new InformationalError("reset"));
-          return constants3.ERROR.PAUSED;
+          return constants4.ERROR.PAUSED;
         } else if (socket[kReset] && client[kRunning] === 0) {
           util.destroy(socket, new InformationalError("reset"));
-          return constants3.ERROR.PAUSED;
+          return constants4.ERROR.PAUSED;
         } else if (client[kPipelining] == null || client[kPipelining] === 1) {
           setImmediate(() => client[kResume]());
         } else {
@@ -19150,8 +19150,8 @@ var require_undici = __commonJS({
 });
 
 // src/main.ts
-import { realpathSync } from "node:fs";
-import { appendFile as appendFile2, readFile, stat as stat2 } from "node:fs/promises";
+import { constants as constants3, realpathSync } from "node:fs";
+import { appendFile as appendFile2, open as open2 } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep as sep5 } from "node:path";
 
 // node_modules/@actions/core/lib/command.js
@@ -21641,10 +21641,10 @@ var Minimatch = class {
       }
       return filtered.join("/");
     }).join("|");
-    const [open2, close] = set.length > 1 ? ["(?:", ")"] : ["", ""];
-    re = "^" + open2 + re + close + "$";
+    const [open3, close] = set.length > 1 ? ["(?:", ")"] : ["", ""];
+    re = "^" + open3 + re + close + "$";
     if (this.partial) {
-      re = "^(?:\\/|" + open2 + re.slice(1, -1) + close + ")$";
+      re = "^(?:\\/|" + open3 + re.slice(1, -1) + close + ")$";
     }
     if (this.negate)
       re = "^(?!" + re + ").+$";
@@ -22267,7 +22267,7 @@ function nestsTooDeep(value) {
   return false;
 }
 function textNestsTooDeep(text) {
-  let open2 = 0;
+  let open3 = 0;
   let inString = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -22277,9 +22277,9 @@ function textNestsTooDeep(text) {
     } else if (c === '"') {
       inString = true;
     } else if (c === "[" || c === "{") {
-      if (++open2 > MAX_NESTING) return true;
-    } else if ((c === "]" || c === "}") && open2 > 0) {
-      open2--;
+      if (++open3 > MAX_NESTING) return true;
+    } else if ((c === "]" || c === "}") && open3 > 0) {
+      open3--;
     }
   }
   return false;
@@ -22779,13 +22779,25 @@ async function globFiles(patterns) {
   return [...new Set(found)].sort();
 }
 async function readLimited(path6) {
+  const tooLarge = `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads`;
   try {
-    const info2 = await stat2(path6);
-    if (!info2.isFile()) return { ok: false, reason: "not a regular file" };
-    if (info2.size > MAX_FILE_BYTES) {
-      return { ok: false, reason: `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads` };
+    const handle = await open2(path6, constants3.O_RDONLY | constants3.O_NONBLOCK);
+    try {
+      const info2 = await handle.stat();
+      if (!info2.isFile()) return { ok: false, reason: "not a regular file" };
+      if (info2.size > MAX_FILE_BYTES) return { ok: false, reason: tooLarge };
+      const buf = Buffer.alloc(MAX_FILE_BYTES + 1);
+      let length = 0;
+      while (length < buf.length) {
+        const { bytesRead } = await handle.read(buf, length, buf.length - length, length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      if (length > MAX_FILE_BYTES) return { ok: false, reason: tooLarge };
+      return { ok: true, content: buf.toString("utf8", 0, length) };
+    } finally {
+      await handle.close();
     }
-    return { ok: true, content: await readFile(path6, "utf8") };
   } catch (err) {
     const code = err instanceof Error && "code" in err ? String(err.code) : String(err);
     return { ok: false, reason: `file could not be read (${code})` };
