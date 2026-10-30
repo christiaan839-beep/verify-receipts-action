@@ -11,11 +11,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
-var __commonJS = (cb, mod) => function __require2() {
+var __commonJS = (cb, mod2) => function __require2() {
   try {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+    return mod2 || (0, cb[__getOwnPropNames(cb)[0]])((mod2 = { exports: {} }).exports, mod2), mod2.exports;
   } catch (e) {
-    throw mod = 0, e;
+    throw mod2 = 0, e;
   }
 };
 var __copyProps = (to, from, except, desc) => {
@@ -26,13 +26,13 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+var __toESM = (mod2, isNodeMode, target) => (target = mod2 != null ? __create(__getProtoOf(mod2)) : {}, __copyProps(
   // If the importer is in node compatibility mode or this is not an ESM
   // file that has been converted to a CommonJS file using a Babel-
   // compatible transform (i.e. "__esModule" has not been set), then set
   // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
+  isNodeMode || !mod2 || !mod2.__esModule ? __defProp(target, "default", { value: mod2, enumerable: true }) : target,
+  mod2
 ));
 
 // node_modules/tunnel/lib/tunnel.js
@@ -5796,13 +5796,13 @@ var require_client_h1 = __commonJS({
     var extractBody;
     async function lazyllhttp() {
       const llhttpWasmData = process.env.JEST_WORKER_ID ? require_llhttp_wasm() : void 0;
-      let mod;
+      let mod2;
       try {
-        mod = await WebAssembly.compile(require_llhttp_simd_wasm());
+        mod2 = await WebAssembly.compile(require_llhttp_simd_wasm());
       } catch (e) {
-        mod = await WebAssembly.compile(llhttpWasmData || require_llhttp_wasm());
+        mod2 = await WebAssembly.compile(llhttpWasmData || require_llhttp_wasm());
       }
-      return await WebAssembly.instantiate(mod, {
+      return await WebAssembly.instantiate(mod2, {
         env: {
           /* eslint-disable camelcase */
           wasm_on_url: (p, at, len) => {
@@ -15066,7 +15066,7 @@ var require_util4 = __commonJS({
           if (encoding === "failure") {
             encoding = "UTF-8";
           }
-          return decode(bytes, encoding);
+          return decode2(bytes, encoding);
         }
         case "ArrayBuffer": {
           const sequence = combineByteSequences(bytes);
@@ -15083,7 +15083,7 @@ var require_util4 = __commonJS({
         }
       }
     }
-    function decode(ioQueue, encoding) {
+    function decode2(ioQueue, encoding) {
       const bytes = combineByteSequences(ioQueue);
       const BOMEncoding = BOMSniffing(bytes);
       let slice = 0;
@@ -19314,13 +19314,13 @@ var HttpResponseRetryCodes = [
 // node_modules/@actions/core/lib/summary.js
 import { EOL as EOL3 } from "os";
 import { constants, promises } from "fs";
-var __awaiter = function(thisArg, _arguments, P, generator) {
+var __awaiter = function(thisArg, _arguments, P2, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve2) {
+    return value instanceof P2 ? value : new P2(function(resolve2) {
       resolve2(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve2, reject) {
+  return new (P2 || (P2 = Promise))(function(resolve2, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -21947,13 +21947,13 @@ var SearchState = class {
 };
 
 // node_modules/@actions/glob/lib/internal-globber.js
-var __awaiter2 = function(thisArg, _arguments, P, generator) {
+var __awaiter2 = function(thisArg, _arguments, P2, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve2) {
+    return value instanceof P2 ? value : new P2(function(resolve2) {
       resolve2(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve2, reject) {
+  return new (P2 || (P2 = Promise))(function(resolve2, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -22184,13 +22184,13 @@ var DefaultGlobber = class _DefaultGlobber {
 };
 
 // node_modules/@actions/glob/lib/glob.js
-var __awaiter3 = function(thisArg, _arguments, P, generator) {
+var __awaiter3 = function(thisArg, _arguments, P2, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve2) {
+    return value instanceof P2 ? value : new P2(function(resolve2) {
       resolve2(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve2, reject) {
+  return new (P2 || (P2 = Promise))(function(resolve2, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -22218,10 +22218,101 @@ function create(patterns, options) {
 }
 
 // src/keys.ts
-import { createHash as createHash2, createPublicKey } from "node:crypto";
+import { createHash as createHash2, createPublicKey as createPublicKey2 } from "node:crypto";
 
 // src/vendor/verifiable-receipts/receipt.ts
-import { createHash, verify as nodeVerify } from "node:crypto";
+import { createHash, createPublicKey, verify as nodeVerify } from "node:crypto";
+
+// src/vendor/verifiable-receipts/edwards25519.ts
+var P = 2n ** 255n - 19n;
+var L = 2n ** 252n + 27742317777372353535851937790883648493n;
+var mod = (a) => {
+  const r = a % P;
+  return r < 0n ? r + P : r;
+};
+function pow(base, exp) {
+  let result = 1n;
+  let b = mod(base);
+  for (let e = exp; e > 0n; e >>= 1n) {
+    if (e & 1n) result = result * b % P;
+    b = b * b % P;
+  }
+  return result;
+}
+var inv = (a) => pow(a, P - 2n);
+var D = mod(-121665n * inv(121666n));
+var SQRT_M1 = pow(2n, (P - 1n) / 4n);
+var NOT_CANONICAL = "not a canonical encoding";
+var NOT_ON_CURVE = "not a point on the curve";
+var SMALL_ORDER = "a small-order point";
+var NOT_IN_SUBGROUP = "not in the prime-order subgroup";
+var IDENTITY = Object.freeze({ X: 0n, Y: 1n, Z: 1n, T: 0n });
+function pointAdd(p, q) {
+  const a = mod((p.Y - p.X) * (q.Y - q.X));
+  const b = mod((p.Y + p.X) * (q.Y + q.X));
+  const c = mod(2n * p.T * q.T * D);
+  const d = mod(2n * p.Z * q.Z);
+  const e = b - a;
+  const f = d - c;
+  const g = d + c;
+  const h = b + a;
+  return { X: mod(e * f), Y: mod(g * h), Z: mod(f * g), T: mod(e * h) };
+}
+function scalarMult(k, p) {
+  let q = IDENTITY;
+  const bits = k > 0n ? k.toString(2) : "";
+  for (const bit of bits) {
+    q = pointAdd(q, q);
+    if (bit === "1") q = pointAdd(q, p);
+  }
+  return q;
+}
+function isIdentity(p) {
+  return mod(p.X) === 0n && mod(p.Y - p.Z) === 0n;
+}
+var xSquared = (y) => mod((y * y - 1n) * inv(D * y * y + 1n));
+function recoverX(x2, sign) {
+  if (x2 === 0n) return sign ? null : 0n;
+  let x = pow(x2, (P + 3n) / 8n);
+  if (mod(x * x - x2) !== 0n) x = mod(x * SQRT_M1);
+  if (mod(x * x - x2) !== 0n) return null;
+  return (x & 1n) !== sign ? P - x : x;
+}
+var BASE_Y = mod(4n * inv(5n));
+var BASE_X = recoverX(xSquared(BASE_Y), 0n);
+var BASE = { X: BASE_X, Y: BASE_Y, Z: 1n, T: mod(BASE_X * BASE_Y) };
+function littleEndian(data) {
+  let n = 0n;
+  for (let i = data.length - 1; i >= 0; i--) n = n << 8n | BigInt(data[i] ?? 0);
+  return n;
+}
+function decode(data) {
+  if (data.length !== 32) return [null, NOT_CANONICAL];
+  const n = littleEndian(data);
+  const y = n & (1n << 255n) - 1n;
+  const sign = n >> 255n;
+  if (y >= P) return [null, NOT_CANONICAL];
+  const x2 = xSquared(y);
+  if (x2 === 0n && sign) return [null, NOT_CANONICAL];
+  const x = recoverX(x2, sign);
+  if (x === null) return [null, NOT_ON_CURVE];
+  return [{ X: x, Y: y, Z: 1n, T: mod(x * y) }, null];
+}
+function hasSmallOrder(p) {
+  return isIdentity(scalarMult(8n, p));
+}
+function inPrimeOrderSubgroup(p) {
+  return isIdentity(scalarMult(L, p));
+}
+function pointProblem(data) {
+  const [p, problem] = decode(data);
+  if (p === null) return problem;
+  if (hasSmallOrder(p)) return SMALL_ORDER;
+  if (!inPrimeOrderSubgroup(p)) return NOT_IN_SUBGROUP;
+  return null;
+}
+
+// src/vendor/verifiable-receipts/receipt.ts
 var ENVELOPE_ONLY = /* @__PURE__ */ new Set(["canonical", "contentHash", "signature"]);
 var STANDARD_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 var SIGNATURE_MISMATCH_REASON = "signature does not verify under the supplied public key";
@@ -22237,7 +22328,28 @@ var SMALL_ORDER_KEYS = /* @__PURE__ */ new Set([
   "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
   "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
 ]);
+var keyProblems = /* @__PURE__ */ new Map();
+var littleEndian2 = (bytes) => BigInt("0x" + (Buffer.from(bytes).reverse().toString("hex") || "0"));
+function rawKeyProblem(raw) {
+  if (raw.length !== 32) return "public key is not 32 bytes";
+  const hex = Buffer.from(raw).toString("hex");
+  const cached = keyProblems.get(hex);
+  if (cached !== void 0) return cached;
+  const cleared = Buffer.from(raw);
+  cleared[31] = (cleared[31] ?? 0) & 127;
+  let problem;
+  if (SMALL_ORDER_KEYS.has(cleared.toString("hex"))) problem = "public key is a small-order point";
+  else if (littleEndian2(cleared) >= P) problem = "public key is not a canonical encoding";
+  else {
+    const p = pointProblem(raw);
+    problem = p === null ? null : `public key is ${p}`;
+  }
+  if (keyProblems.size >= 256) keyProblems.clear();
+  keyProblems.set(hex, problem);
+  return problem;
+}
 function ed25519KeyProblem(publicKey) {
+  if (publicKey.asymmetricKeyType !== "ed25519") return null;
   let x;
   try {
     x = publicKey.export({ format: "jwk" }).x;
@@ -22245,12 +22357,14 @@ function ed25519KeyProblem(publicKey) {
     return null;
   }
   if (typeof x !== "string") return null;
-  const cleared = Buffer.from(x, "base64url");
-  if (cleared.length !== 32) return null;
-  cleared[31] = (cleared[31] ?? 0) & 127;
-  if (SMALL_ORDER_KEYS.has(cleared.toString("hex"))) return "public key is a small-order point";
-  const y = BigInt("0x" + Buffer.from(cleared).reverse().toString("hex"));
-  if (y >= 2n ** 255n - 19n) return "public key is not a canonical encoding";
+  const raw = Buffer.from(x, "base64url");
+  return raw.length === 32 ? rawKeyProblem(raw) : null;
+}
+function signatureProblem(sig) {
+  if (sig.length !== 64) return SIGNATURE_MISMATCH_REASON;
+  const problem = pointProblem(sig.subarray(0, 32));
+  if (problem !== null) return `signature R is ${problem}`;
+  if (littleEndian2(sig.subarray(32)) >= L) return SIGNATURE_MISMATCH_REASON;
   return null;
 }
 var MAX_NESTING = 64;
@@ -22342,6 +22456,8 @@ function verifyV2Receipt(receipt, publicKey) {
       return { ok: false, reason: "contentHash mismatch with canonical bytes" };
     }
   }
+  const sigProblem = signatureProblem(sigBytes);
+  if (sigProblem !== null) return { ok: false, reason: sigProblem };
   let verified;
   try {
     verified = nodeVerify(null, canonicalBytes, publicKey, sigBytes);
@@ -22401,7 +22517,7 @@ function parsePublicKeys(text, source) {
     }
     let key;
     try {
-      key = createPublicKey({ key: match3[0], format: "pem" });
+      key = createPublicKey2({ key: match3[0], format: "pem" });
     } catch {
       throw new KeyError(`${source}: block ${blocks} is not a readable public key`);
     }
@@ -22535,6 +22651,12 @@ function parseTime(v) {
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : null;
 }
+var R_PROBLEM = "signature R is ";
+var KEY_PROBLEM = "public key is ";
+function isSignatureFailure(reason) {
+  if (reason === void 0) return false;
+  return reason === SIGNATURE_MISMATCH_REASON || reason.startsWith(R_PROBLEM) || reason.startsWith(KEY_PROBLEM);
+}
 function verifyUnderKeys(signed, keys) {
   if (isObject2(signed) && typeof signed.signature === "string") {
     const prefix = /^(v\d+)=/.exec(signed.signature)?.[1];
@@ -22546,18 +22668,22 @@ function verifyUnderKeys(signed, keys) {
     }
   }
   let first;
-  let afterSignature;
+  let receiptProblem;
+  let rProblem;
   for (const k of keys) {
     const r = verifyV2Receipt(signed, k.key);
     if (r.ok) return { ok: true, key: k.fingerprint };
     first ??= r;
-    if (r.reason !== SIGNATURE_MISMATCH_REASON) afterSignature ??= r;
+    if (!isSignatureFailure(r.reason)) receiptProblem ??= r;
+    else if (r.reason?.startsWith(R_PROBLEM) === true) rProblem ??= r;
   }
-  const chosen = afterSignature ?? first ?? { ok: false, reason: "no public key to verify with" };
-  if (chosen.reason === SIGNATURE_MISMATCH_REASON && keys.length > 1) {
+  if (receiptProblem !== void 0) return receiptProblem;
+  if (rProblem !== void 0) return rProblem;
+  if (first === void 0) return { ok: false, reason: "no public key to verify with" };
+  if (keys.length > 1) {
     return { ok: false, reason: `signature does not verify under any of the ${keys.length} pinned public keys` };
   }
-  return chosen;
+  return first;
 }
 function checkTimes(signed, now, maxAgeDays) {
   const nowMs = now.getTime();

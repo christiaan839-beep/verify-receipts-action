@@ -2,11 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey } from "node:crypto";
 import { describe, it } from "node:test";
 
 import { verifyReceipts, type ReceiptResult, type VerifyOptions } from "../src/verify.ts";
-import { arrays, buildLog, makeKey, rfcLeafHash, sampleBody, signReceipt, signTreeHead, type SignedReceipt } from "./helpers.ts";
+import type { PinnedKey } from "../src/keys.ts";
+import {
+  arrays,
+  buildLog,
+  makeKey,
+  readFixture,
+  rfcLeafHash,
+  sampleBody,
+  signReceipt,
+  signTreeHead,
+  type SignedReceipt,
+} from "./helpers.ts";
 
 const NOW = new Date("2026-10-23T12:00:00Z");
 const issuer = makeKey();
@@ -141,6 +152,63 @@ describe("wrong key", () => {
     const r = one(tampered, { keys: [other.pinned, issuer.pinned] });
     assert.equal(r.ok, false);
     assert.match(r.reason ?? "", /envelope field "overall" disagrees/);
+  });
+});
+
+/** A key the action refuses when it reads its inputs, pinned here directly, as a caller of verifyReceipts could. */
+function refusedKey(fixture: string): PinnedKey {
+  const { publicKeyPem } = JSON.parse(readFixture(fixture)) as { publicKeyPem: string };
+  return { key: createPublicKey(publicKeyPem), fingerprint: `refused:${fixture}` };
+}
+
+/** A conformance receipt with its own ordinary key. */
+function fixtureReceipt(fixture: string): { receipt: unknown; key: PinnedKey } {
+  const { receipt, publicKeyPem } = JSON.parse(readFixture(fixture)) as { receipt: unknown; publicKeyPem: string };
+  return { receipt, key: { key: createPublicKey(publicKeyPem), fingerprint: `key:${fixture}` } };
+}
+
+describe("signature-level failures under several keys (VAOS 2.0 §7.3)", () => {
+  const mixedOrder = refusedKey("ed25519-key-mixed-order-4.json");
+  const offCurve = refusedKey("ed25519-key-off-curve.json");
+
+  it("reports the envelope problem, not a refused key, when another key verifies the signature", () => {
+    const tampered = { ...signReceipt(sampleBody(), issuer.privateKey), overall: "fail" };
+    const r = one(tampered, { keys: [mixedOrder, issuer.pinned] });
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? "", /envelope field "overall" disagrees/);
+  });
+
+  it("counts a refused key as one that does not verify the signature", () => {
+    const stranger = makeKey();
+    const r = one(signReceipt(sampleBody(), stranger.privateKey), { keys: [offCurve, other.pinned] });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "signature does not verify under any of the 2 pinned public keys");
+  });
+
+  it("names the key's problem when it is the only key", () => {
+    const r = one(signReceipt(sampleBody(), other.privateKey), { keys: [mixedOrder] });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "public key is not in the prime-order subgroup");
+  });
+
+  it("names the problem with R, which is the same under every key", () => {
+    const { receipt, key } = fixtureReceipt("ed25519-r-identity.json");
+    const r = one(receipt, { keys: [other.pinned, key, issuer.pinned] });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "signature R is a small-order point");
+  });
+
+  it("does not report a problem with R as a check after the signature", () => {
+    const { receipt, key } = fixtureReceipt("ed25519-r-mixed-order.json");
+    const r = one(receipt, { keys: [mixedOrder, key] });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "signature R is not in the prime-order subgroup");
+  });
+
+  it("verifies under the good key when a refused key is pinned beside it", () => {
+    const r = one(signReceipt(sampleBody(), issuer.privateKey), { keys: [offCurve, issuer.pinned] });
+    assert.equal(r.ok, true, r.reason);
+    assert.equal(r.key, issuer.pinned.fingerprint);
   });
 });
 

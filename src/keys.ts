@@ -18,8 +18,9 @@ const PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g;
 
 /**
  * Reads every PEM block in `text` and returns the Ed25519 public keys.
- * A private key, a non-Ed25519 key, a weak Ed25519 key (a point of small
- * order or a non-canonical encoding, VAOS 2.0 §7.3), an unreadable block,
+ * A private key, a non-Ed25519 key, a weak Ed25519 key (a non-canonical
+ * encoding, a point off the curve, of small order or outside the
+ * prime-order subgroup, VAOS 2.0 §7.3), an unreadable block,
  * or text with no PEM block at all is an error: the action never guesses
  * which key was meant.
  * `source` names the input or file in error messages.

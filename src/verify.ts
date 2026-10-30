@@ -115,11 +115,33 @@ function parseTime(v: unknown): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** The prefixes of the strict-profile reasons of VAOS 2.0 §7.3, as the vendored verifier gives them. */
+const R_PROBLEM = "signature R is ";
+const KEY_PROBLEM = "public key is ";
+
+/**
+ * Whether a failure is about the signature under that one key: it does
+ * not verify (an S of L or more included), the key is refused, or the
+ * signature's R is (VAOS 2.0 §7.3). Every other reason is about the
+ * receipt itself: a malformed envelope or a wrong contentHash, the same
+ * under every key, or a canonical or envelope field that fails after the
+ * signature has verified.
+ */
+function isSignatureFailure(reason: string | undefined): boolean {
+  if (reason === undefined) return false;
+  return reason === SIGNATURE_MISMATCH_REASON || reason.startsWith(R_PROBLEM) || reason.startsWith(KEY_PROBLEM);
+}
+
 /**
  * Verifies `signed` (an object with `canonical` and `signature`) under each
- * key and returns the first success. When every key fails, the reason is
- * one where the signature did verify but a later check failed, if there
- * is one, so that a tampered envelope is not reported as a wrong key.
+ * key and returns the first success. When every key fails:
+ *
+ * - a reason about the receipt itself wins, so that a tampered envelope is
+ *   not reported as a wrong key, nor hidden behind a refused key;
+ * - then a problem with R, which no key can get past;
+ * - then, with one key, its own reason, and with several, that the
+ *   signature verifies under none of them (a refused key among them
+ *   counts as one it does not verify under).
  */
 function verifyUnderKeys(
   signed: unknown,
@@ -135,18 +157,22 @@ function verifyUnderKeys(
     }
   }
   let first: VerifyResult | undefined;
-  let afterSignature: VerifyResult | undefined;
+  let receiptProblem: VerifyResult | undefined;
+  let rProblem: VerifyResult | undefined;
   for (const k of keys) {
     const r = verifyV2Receipt(signed, k.key);
     if (r.ok) return { ok: true, key: k.fingerprint };
     first ??= r;
-    if (r.reason !== SIGNATURE_MISMATCH_REASON) afterSignature ??= r;
+    if (!isSignatureFailure(r.reason)) receiptProblem ??= r;
+    else if (r.reason?.startsWith(R_PROBLEM) === true) rProblem ??= r;
   }
-  const chosen = afterSignature ?? first ?? { ok: false, reason: "no public key to verify with" };
-  if (chosen.reason === SIGNATURE_MISMATCH_REASON && keys.length > 1) {
+  if (receiptProblem !== undefined) return receiptProblem;
+  if (rProblem !== undefined) return rProblem;
+  if (first === undefined) return { ok: false, reason: "no public key to verify with" };
+  if (keys.length > 1) {
     return { ok: false, reason: `signature does not verify under any of the ${keys.length} pinned public keys` };
   }
-  return chosen;
+  return first;
 }
 
 function checkTimes(

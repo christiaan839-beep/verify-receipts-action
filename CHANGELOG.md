@@ -6,6 +6,32 @@ Notable changes to verify-receipts-action. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The vendored verifier is synced to verifiable-receipts f41348e, which adds the
+  strict Ed25519 profile of VAOS 2.0 §7.3. Before the signature check, a pinned
+  key is refused if it is a non-canonical encoding, off the curve, of small
+  order or outside the prime-order subgroup, and a signature is refused if its
+  R has any of those faults (R = identity included) or its S is not below L.
+  Each refusal has its own reason (`public key is …`, `signature R is …`). The
+  arithmetic is pure BigInt, in `src/vendor/verifiable-receipts/edwards25519.ts`.
+- Node.js 24.22.1, the `node24` runtime, refuses an R equal to the identity that
+  Node.js 22 accepts. The action now refuses it before Node.js sees it, so the
+  verdict no longer depends on the runtime and agrees with the Python and Go
+  verifiers.
+- The conformance tests run the 20 shared `ed25519-*.json` vectors: the 17 given
+  as receipts through the action's verify path, the 3 RFC 8032 vectors through
+  the action's key reader and the vendored strict check.
+
+### Fixed
+
+- With several pinned keys, a refused key or a problem with R is now reported as
+  a signature failure. Before, any reason other than "signature does not verify"
+  was taken for a check after the signature, so a refused key could hide a
+  tampered envelope that another key's signature check reached, and a mix of a
+  refused key and a wrong key was not reported as "does not verify under any of
+  the N pinned public keys".
+
 ## [0.1.0] — 2026-10-30
 
 The first release: a GitHub Action that fails a build when a verifiable receipt

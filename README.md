@@ -65,8 +65,8 @@ blank lines and lines starting with `#` are ignored. Paths and patterns are rela
 
 At least one receipt key is required, from `public-keys`, `public-keys-file` or both. `log-public-keys`,
 `log-public-keys-file` and `inclusion-proofs` without `tree-head` are a configuration error, as is `tree-head` without a
-log key. A private key in any key input is a configuration error, as is a weak Ed25519 key: a point of small order or a
-non-canonical encoding (VAOS 2.0 §7.3), under which a signature proves nothing.
+log key. A private key in any key input is a configuration error, as is a weak Ed25519 key (VAOS 2.0 §7.3): a non-canonical
+encoding, a point off the curve, a point of small order, or a point outside the prime-order subgroup.
 
 ## Outputs
 
@@ -109,7 +109,9 @@ For each receipt, in this order:
    parsed.
 2. `signature` starts with `v2=`. Any other version prefix (`v1=`, `v3=` and so on) fails as an unsupported algorithm.
 3. The checks of the verifiable-receipts v2 verifier: `canonical` and `signature` are present, the base64 is standard,
-   `contentHash`, unless absent or null, matches (an empty string does not), the Ed25519 signature verifies over the
+   `contentHash`, unless absent or null, matches (an empty string does not), the signature's R is a canonical encoding
+   of a point on the curve in the prime-order subgroup and not of small order (so R = identity is refused on every
+   Node.js version) and its S is below the group order L (VAOS 2.0 §7.3), the Ed25519 signature verifies over the
    UTF-8 bytes of `canonical` under one of the pinned keys, `canonical` nests at most 64 deep (counted on its text) and
    is a JSON object, and every other top-level field agrees with it. A number of magnitude 2^53 or more in such a field
    agrees with nothing.
@@ -162,10 +164,12 @@ it needs in `src/vendor/verifiable-receipts/`:
 
 - `receipt.ts` is `packages/verifiable-receipts/conformance/verify-v2.mjs`, converted to TypeScript with its checks,
   their order and their failure reasons unchanged.
+- `edwards25519.ts` is `packages/verifiable-receipts/src/edwards25519.ts`, the pure BigInt point arithmetic behind the
+  strict Ed25519 checks of VAOS 2.0 §7.3. `receipt.ts` takes it from there instead of carrying the harness's own copy.
 - `transparency.ts` is the verification half of `packages/verifiable-receipts/src/transparency.ts`: `leafHash`,
   `innerHash`, `verifyInclusionProof` and `canonicalizeSth`.
 
-Both come from commit `24f5c4780dba7c4f76b159b7f7844e17d0226cd6` of verifiable-receipts, under the Apache License 2.0.
+All three come from commit `f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a` of verifiable-receipts, under the Apache License 2.0.
 Each file's header says what changed. The licence is in `third_party/verifiable-receipts/LICENSE`. The conformance
 fixtures in `test/fixtures/conformance/` are copied from the same commit; `test/fixtures/conformance/README.md` says so.
 The `vendor` job in `.github/workflows/ci.yml` checks the copies against that commit, named there as `VR_REF`.
