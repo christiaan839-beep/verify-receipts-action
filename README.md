@@ -41,6 +41,8 @@ jobs:
 Pin the action to a full commit SHA, as with any third-party action. Keep the pinned keys in the repository, where a
 change to them shows in review.
 
+Releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html); `CHANGELOG.md` lists the changes in each.
+
 `.github/workflows/self-test.yml` runs the action on the files in `selftest/` and is a second, working example.
 
 ## Inputs
