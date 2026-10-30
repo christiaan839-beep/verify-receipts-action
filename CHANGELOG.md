@@ -22,6 +22,14 @@ Notable changes to verify-receipts-action. The format follows
 - The conformance tests run the 20 shared `ed25519-*.json` vectors: the 17 given
   as receipts through the action's verify path, the 3 RFC 8032 vectors through
   the action's key reader and the vendored strict check.
+- The vendored copies are re-pinned to verifiable-receipts 4d9943a. That commit
+  changes `ed25519PublicKeyProblem` and `ed25519SignatureProblem` in the
+  library's `src/ed25519-key.ts` to return a reason for anything that is not a
+  `Uint8Array` instead of throwing; the action does not vendor that file, and
+  none of the files it vendors changed, so the copies and the fixtures are as
+  they were. `receipt.ts` keeps `publicKey.asymmetricKeyType` where upstream has
+  `publicKey?.asymmetricKeyType`, since its parameter is a `KeyObject`; its
+  header now says so.
 
 ### Fixed
 

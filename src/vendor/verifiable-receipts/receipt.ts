@@ -3,20 +3,23 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/conformance/verify-v2.mjs at commit
-// f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a. Licence:
+// 4d9943a99376527f742dcfdf93652ed040a51b43. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: converted to TypeScript with explicit types
 // (verifyEd25519Strict takes its arguments as unknown, since it checks
 // them); the signature-mismatch reason exported as SIGNATURE_MISMATCH_REASON;
 // ed25519KeyProblem exported, so the action can refuse a weak key when it
-// reads its inputs; the edwards25519 arithmetic (P, L and pointProblem)
-// imported from edwards25519.ts, vendored from the library's
-// src/edwards25519.ts at the same commit, instead of written out a second
-// time here. Upstream keeps the two copies apart so its harness does not
-// rest on the code it checks; they use the same constants, the same order
-// of checks and the same reasons. No change to the checks, their order or
-// their failure reasons.
+// reads its inputs, and its publicKey?.asymmetricKeyType written
+// publicKey.asymmetricKeyType, since its parameter is a KeyObject and the
+// lint refuses an optional chain on a value that cannot be nullish (its
+// one caller always passes a KeyObject); the edwards25519 arithmetic (P, L
+// and pointProblem) imported from edwards25519.ts, vendored from the
+// library's src/edwards25519.ts at the same commit, instead of written out
+// a second time here. Upstream keeps the two copies apart so its harness
+// does not rest on the code it checks; they use the same constants, the
+// same order of checks and the same reasons. No change to the checks,
+// their order or their failure reasons.
 
 /**
  * The v2 (Ed25519) receipt verifier of the verifiable-receipts conformance

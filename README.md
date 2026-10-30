@@ -169,7 +169,7 @@ it needs in `src/vendor/verifiable-receipts/`:
 - `transparency.ts` is the verification half of `packages/verifiable-receipts/src/transparency.ts`: `leafHash`,
   `innerHash`, `verifyInclusionProof` and `canonicalizeSth`.
 
-All three come from commit `f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a` of verifiable-receipts, under the Apache License 2.0.
+All three come from commit `4d9943a99376527f742dcfdf93652ed040a51b43` of verifiable-receipts, under the Apache License 2.0.
 Each file's header says what changed. The licence is in `third_party/verifiable-receipts/LICENSE`. The conformance
 fixtures in `test/fixtures/conformance/` are copied from the same commit; `test/fixtures/conformance/README.md` says so.
 The `vendor` job in `.github/workflows/ci.yml` checks the copies against that commit, named there as `VR_REF`.

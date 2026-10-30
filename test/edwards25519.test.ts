@@ -3,7 +3,7 @@
 //
 // Vendored from verifiable-receipts,
 // packages/verifiable-receipts/tests/edwards25519.test.ts at commit
-// f41348eac297c81e1c2a0dca91b7bd49dd2a5d9a. Licence:
+// 4d9943a99376527f742dcfdf93652ed040a51b43. Licence:
 // third_party/verifiable-receipts/LICENSE.
 //
 // Changed from the original: node:test and node:assert instead of vitest;
