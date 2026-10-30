@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "node --test \"test/**/*.test.ts\"",
+    "coverage": "node --test --test-reporter=spec --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=98 --test-coverage-branches=90 --test-coverage-functions=98 \"test/**/*.test.ts\"",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {

@@ -6,6 +6,13 @@ Notable changes to verify-receipts-action. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Each receipt, key, tree-head and proof file is opened once, and its type check,
+  size check and read all go through that one handle, so the file read is the
+  file checked. A file whose size changes between the check and the read is
+  refused ("file changed while being read").
+
 ## [0.1.0] — 2026-10-29
 
 The first release: a GitHub Action that fails a build when a verifiable receipt

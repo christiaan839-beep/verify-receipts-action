@@ -6,8 +6,8 @@
  * runs the offline checks in verify.ts, and reports through outputs, the
  * job summary and annotations. It makes no network request.
  */
-import { realpathSync } from "node:fs";
-import { appendFile, readFile, stat } from "node:fs/promises";
+import { constants, realpathSync } from "node:fs";
+import { appendFile, open } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import * as core from "@actions/core";
@@ -80,14 +80,38 @@ async function globFiles(patterns: readonly string[]): Promise<string[]> {
 
 type ReadResult = { ok: true; content: string } | { ok: false; reason: string };
 
+/**
+ * Opens the file once and makes the type and size checks and the read on
+ * that one handle, so the path cannot be replaced between check and read.
+ * The file is opened before its type is known, so a character device is
+ * opened too (harmless: nothing is read from it), and O_NONBLOCK keeps the
+ * open from waiting on a named pipe. The handle's fstat is the authority:
+ * anything it does not call a regular file is refused, and the buffer is
+ * sized from the size it reports. If the read finds more or fewer bytes than
+ * that size, the file changed after the check and is refused.
+ */
 async function readLimited(path: string): Promise<ReadResult> {
   try {
-    const info = await stat(path);
-    if (!info.isFile()) return { ok: false, reason: "not a regular file" };
-    if (info.size > MAX_FILE_BYTES) {
-      return { ok: false, reason: `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads` };
+    const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) return { ok: false, reason: "not a regular file" };
+      if (info.size > MAX_FILE_BYTES) {
+        return { ok: false, reason: `file is larger than the ${MAX_FILE_BYTES / (1024 * 1024)} MiB the action reads` };
+      }
+      // One byte more than fstat reported, so growth shows as a full buffer.
+      const buf = Buffer.alloc(info.size + 1);
+      let length = 0;
+      while (length < buf.length) {
+        const { bytesRead } = await handle.read(buf, length, buf.length - length, length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      if (length !== info.size) return { ok: false, reason: "file changed while being read" };
+      return { ok: true, content: buf.toString("utf8", 0, length) };
+    } finally {
+      await handle.close();
     }
-    return { ok: true, content: await readFile(path, "utf8") };
   } catch (err) {
     const code = err instanceof Error && "code" in err ? String(err.code) : String(err);
     return { ok: false, reason: `file could not be read (${code})` };

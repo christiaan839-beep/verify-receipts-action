@@ -1,0 +1,8 @@
+# actionlint 1.7.12 does not know GitHub's self-repository syntax (uses: $/),
+# which runs the action or reusable workflow at the commit being run
+# (rhysd/actionlint#711). These two patterns silence only that.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'specifying action "\$/" in invalid format because ref is missing'
+      - 'reusable workflow call "\$/\.github/workflows/[^"]+" at "uses" is not following the format'

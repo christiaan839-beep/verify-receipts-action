@@ -1,4 +1,4 @@
-# Type check, lint, unit tests, the dist/ freshness check, and a run of the
+# Type check, lint, unit tests with coverage, the dist/ freshness check, and a run of the
 # bundle in a network namespace with no interfaces up.
 name: ci
 
@@ -64,7 +64,25 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # The unit tests, with line, branch and function coverage of src/.
+      # The thresholds are in the coverage script in package.json; a drop
+      # below them fails the step.
+      - name: Tests, with coverage
+        run: |
+          set -o pipefail
+          npm run coverage | tee "$RUNNER_TEMP/coverage.txt"
+      - name: Coverage in the job summary
+        if: ${{ !cancelled() }}
+        env:
+          NODE: ${{ matrix.node }}
+        run: |
+          {
+            echo "### Coverage of src/ (Node $NODE)"
+            echo
+            echo '```'
+            sed -n '/start of coverage report/,/end of coverage report/{s/^ℹ //;p;}' "$RUNNER_TEMP/coverage.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: dist/ matches the sources
         run: |
           npm run build
