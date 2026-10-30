@@ -25,6 +25,10 @@ updates:
       # a newer Node's APIs fail the type check instead of the runner.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript-eslint 8 accepts TypeScript below 6.1 only (its peer
+      # range); raise this when typescript-eslint does.
+      - dependency-name: "typescript"
+        versions: [">= 6.1.0"]
     groups:
       npm-development:
         dependency-type: development
